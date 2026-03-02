@@ -44,8 +44,16 @@ DATA_DIR.mkdir(parents=True, exist_ok=True)
 API_KEY_FILE = DATA_DIR / "api_key.txt"
 
 
-def _load_persisted_api_key():
-    """Load API key from disk on startup."""
+def _sync_api_key_on_startup():
+    """Sync API key from env var or persisted file on startup."""
+    # 1. Env var takes priority
+    env_key = os.environ.get("ANTHROPIC_API_KEY", "")
+    if env_key:
+        compiler_module.ANTHROPIC_API_KEY = env_key
+        ai_module.ANTHROPIC_API_KEY = env_key
+        logger.info("Loaded API key from ANTHROPIC_API_KEY env var")
+        return
+    # 2. Fallback: persisted file
     if API_KEY_FILE.exists():
         key = API_KEY_FILE.read_text().strip()
         if key:
@@ -54,8 +62,8 @@ def _load_persisted_api_key():
             logger.info("Loaded persisted API key from disk")
 
 
-# Load on startup
-_load_persisted_api_key()
+# Sync on startup
+_sync_api_key_on_startup()
 
 
 @app.get("/api/health")

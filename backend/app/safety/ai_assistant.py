@@ -18,7 +18,7 @@ MODEL = "claude-sonnet-4-20250514"
 
 async def _call_claude(system_prompt: str, messages: list[dict], max_tokens: int = 1500) -> str:
     """Call Anthropic API and return text response."""
-    api_key = ANTHROPIC_API_KEY
+    api_key = ANTHROPIC_API_KEY or os.environ.get("ANTHROPIC_API_KEY", "")
     if not api_key:
         logger.warning("No ANTHROPIC_API_KEY set — returning placeholder")
         return "[AI unavailable — set ANTHROPIC_API_KEY to enable AI drafting]"
