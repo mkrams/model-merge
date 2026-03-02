@@ -168,7 +168,7 @@ export function ASILAssistantView() {
         <div className="asil-features">
           <div className="asil-feature">
             <strong>Full Safety Chain</strong>
-            <span>Hazard &rarr; Event &rarr; ASIL &rarr; Goal &rarr; FSR &rarr; Test</span>
+            <span>Hazard &rarr; Event (ASIL) &rarr; Goal &rarr; FSR &rarr; Test</span>
           </div>
           <div className="asil-feature">
             <strong>AI Gap-Filling</strong>
@@ -273,9 +273,7 @@ export function ASILAssistantView() {
             <div className="asil-chain-header">
               <span className="asil-chain-header-label">Hazard</span>
               <span className="asil-chain-header-arrow">&rarr;</span>
-              <span className="asil-chain-header-label">Haz. Event</span>
-              <span className="asil-chain-header-arrow">&rarr;</span>
-              <span className="asil-chain-header-label">ASIL</span>
+              <span className="asil-chain-header-label">Haz. Event + ASIL</span>
               <span className="asil-chain-header-arrow">&rarr;</span>
               <span className="asil-chain-header-label">Safety Goal</span>
               <span className="asil-chain-header-arrow">&rarr;</span>
