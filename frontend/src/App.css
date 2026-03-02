@@ -86,10 +86,11 @@ body {
 }
 
 /* When ASIL assistant is active, let it use the full viewport width */
+.main.main-full,
 .main:has(.asil-editor),
 .main:has(.asil-upload) {
   max-width: 100%;
-  padding: 16px 0;
+  padding: 0;
 }
 
 /* ── Upload ───────────────────────────────────────────── */

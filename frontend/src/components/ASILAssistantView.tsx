@@ -293,6 +293,7 @@ export function ASILAssistantView() {
               project={project}
               selectedItemId={selectedItemId}
               onSelectItem={handleSelectItem}
+              onProjectChange={refreshProject}
             />
           ) : (
             <TraceMatrixView

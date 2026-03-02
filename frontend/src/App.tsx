@@ -21,7 +21,7 @@ function App() {
         onToolChange={setActiveTool}
       />
 
-      <main className="main">
+      <main className={`main ${activeTool === 'asil-assistant' ? 'main-full' : ''}`}>
         {error && (
           <div className="error-banner">
             <span>{error}</span>

@@ -10,7 +10,7 @@
 }
 
 .trace-graph-header {
-  padding: 16px;
+  padding: 12px 16px;
   background: var(--surface-2);
   border-bottom: 1px solid var(--line);
   display: flex;
@@ -21,15 +21,43 @@
 
 .trace-graph-header h3 {
   margin: 0;
-  font-size: 16px;
+  font-size: 15px;
   font-weight: 600;
   color: var(--text-1);
 }
 
+.trace-graph-header-right {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
 .trace-graph-count {
   margin: 0;
-  font-size: 13px;
+  font-size: 12px;
   color: var(--text-3);
+}
+
+.trace-graph-linking-hint {
+  font-size: 12px;
+  color: var(--st-approved);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 10px;
+  background: rgba(59, 130, 246, 0.08);
+  border-radius: var(--radius-sm);
+  border: 1px solid rgba(59, 130, 246, 0.2);
+}
+
+.trace-graph-cancel-link {
+  background: none;
+  border: none;
+  color: var(--text-2);
+  cursor: pointer;
+  font-size: 11px;
+  text-decoration: underline;
+  padding: 0;
 }
 
 /* Main container with scrolling */
@@ -64,9 +92,8 @@
 .trace-graph-column {
   display: flex;
   flex-direction: column;
-  min-width: 180px;
-  max-width: 220px;
-  flex: 0 0 auto;
+  flex: 1 1 0;
+  min-width: 170px;
   background: var(--surface-0);
   border-right: 1px solid var(--line);
 }
@@ -79,7 +106,7 @@
 .trace-graph-column-header {
   position: sticky;
   top: 0;
-  padding: 12px;
+  padding: 10px 12px;
   background: var(--surface-2);
   border-bottom: 1px solid var(--line);
   display: flex;
@@ -91,7 +118,7 @@
 }
 
 .trace-graph-column-title {
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 600;
   color: var(--text-1);
   white-space: nowrap;
@@ -104,12 +131,12 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-width: 24px;
-  height: 20px;
-  padding: 0 6px;
+  min-width: 22px;
+  height: 18px;
+  padding: 0 5px;
   background: var(--surface-3);
   color: var(--text-2);
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 600;
   border-radius: 3px;
   flex-shrink: 0;
@@ -119,7 +146,7 @@
 .trace-graph-cards {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 6px;
   padding: 8px;
   overflow-y: auto;
   flex: 1;
@@ -130,12 +157,12 @@
   display: flex;
   align-items: flex-start;
   gap: 8px;
-  padding: 8px;
+  padding: 8px 10px;
   background: var(--surface-1);
   border: 1.5px solid var(--line);
   border-radius: var(--radius-sm);
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition: all 0.2s ease;
   position: relative;
   z-index: 2;
 }
@@ -147,19 +174,34 @@
 }
 
 .graph-card.selected {
-  background: rgba(59, 130, 246, 0.08);
+  background: rgba(59, 130, 246, 0.1);
+  border-color: #3b82f6;
   border-width: 2px;
-  box-shadow: 0 2px 8px rgba(59, 130, 246, 0.2);
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.15), 0 2px 8px rgba(59, 130, 246, 0.2);
 }
 
-.graph-card.connected {
-  background: var(--surface-2);
-  border-color: var(--line-strong);
+.graph-card.in-chain {
+  background: rgba(59, 130, 246, 0.05);
+  border-color: rgba(59, 130, 246, 0.4);
 }
 
 .graph-card.dimmed {
-  opacity: 0.5;
-  pointer-events: none;
+  opacity: 0.35;
+}
+
+.graph-card.dimmed:hover {
+  opacity: 0.8;
+}
+
+.graph-card.link-source {
+  border-color: var(--st-approved);
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.3);
+  animation: pulse-border 1.5s ease infinite;
+}
+
+@keyframes pulse-border {
+  0%, 100% { box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.3); }
+  50% { box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.15); }
 }
 
 /* Status indicator dot */
@@ -180,13 +222,13 @@
 .graph-card-content {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 3px;
   flex: 1;
   min-width: 0;
 }
 
 .graph-card-name {
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 600;
   color: var(--text-1);
   white-space: nowrap;
@@ -196,13 +238,22 @@
 }
 
 .graph-card-desc {
-  font-size: 11px;
+  font-size: 10px;
   color: var(--text-3);
   line-height: 1.3;
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
+}
+
+/* Card actions (ASIL badge + link button) */
+.graph-card-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
 }
 
 /* ASIL badge */
@@ -218,9 +269,114 @@
   font-size: 9px;
   font-weight: 700;
   border-radius: 3px;
-  flex-shrink: 0;
-  margin-top: 2px;
 }
+
+/* Link button on card */
+.graph-card-link-btn {
+  background: none;
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  color: var(--text-3);
+  font-size: 11px;
+  cursor: pointer;
+  padding: 1px 4px;
+  line-height: 1;
+  transition: all 0.15s;
+  opacity: 0;
+}
+
+.graph-card:hover .graph-card-link-btn {
+  opacity: 1;
+}
+
+.graph-card-link-btn:hover {
+  background: var(--surface-3);
+  border-color: var(--line-strong);
+  color: var(--text-1);
+}
+
+/* Add item button */
+.graph-add-btn {
+  width: 100%;
+  padding: 8px;
+  margin-top: 2px;
+  background: transparent;
+  border: 1px dashed var(--line-strong);
+  border-radius: var(--radius-sm);
+  color: var(--text-3);
+  cursor: pointer;
+  font-size: 11px;
+  transition: all 0.15s;
+}
+
+.graph-add-btn:hover {
+  border-color: var(--st-approved);
+  color: var(--st-approved);
+  background: rgba(59, 130, 246, 0.04);
+}
+
+/* Add item inline form */
+.graph-add-form {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px;
+  background: var(--surface-2);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-sm);
+}
+
+.graph-add-input {
+  width: 100%;
+  padding: 6px 8px;
+  background: var(--surface-0);
+  border: 1px solid var(--line-strong);
+  border-radius: 4px;
+  color: var(--text-1);
+  font-size: 12px;
+  font-family: inherit;
+  box-sizing: border-box;
+}
+
+.graph-add-input:focus {
+  border-color: var(--st-approved);
+  outline: none;
+  box-shadow: 0 0 0 2px var(--focus-ring);
+}
+
+.graph-add-actions {
+  display: flex;
+  gap: 4px;
+}
+
+.graph-add-confirm {
+  flex: 1;
+  padding: 5px 8px;
+  background: var(--st-approved);
+  color: #fff;
+  border: none;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.graph-add-confirm:hover { background: #2563eb; }
+.graph-add-confirm:disabled { opacity: 0.4; cursor: not-allowed; }
+
+.graph-add-cancel {
+  padding: 5px 8px;
+  background: var(--surface-3);
+  color: var(--text-2);
+  border: none;
+  border-radius: 4px;
+  font-size: 11px;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.graph-add-cancel:hover { background: var(--line-strong); }
 
 /* Empty state */
 .trace-graph-empty {
@@ -234,28 +390,11 @@
   text-align: center;
 }
 
-/* Status-based card styling */
-.graph-card[data-status='approved'] {
-  --status-color: #2563eb;
-}
-
-.graph-card[data-status='draft'] {
-  --status-color: #f59e0b;
-}
-
-.graph-card[data-status='gap'] {
-  --status-color: #ef4444;
-}
-
-.graph-card[data-status='review'] {
-  --status-color: #06b6d4;
-}
-
 /* Scrollbar styling */
 .trace-graph-container::-webkit-scrollbar,
 .trace-graph-cards::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
+  width: 6px;
+  height: 6px;
 }
 
 .trace-graph-container::-webkit-scrollbar-track,
@@ -266,7 +405,7 @@
 .trace-graph-container::-webkit-scrollbar-thumb,
 .trace-graph-cards::-webkit-scrollbar-thumb {
   background: var(--line-strong);
-  border-radius: 4px;
+  border-radius: 3px;
 }
 
 .trace-graph-container::-webkit-scrollbar-thumb:hover,
@@ -277,8 +416,7 @@
 /* Responsive adjustments */
 @media (max-width: 768px) {
   .trace-graph-column {
-    min-width: 160px;
-    max-width: 200px;
+    min-width: 150px;
   }
 
   .graph-card {
@@ -286,11 +424,6 @@
     gap: 6px;
   }
 
-  .graph-card-name {
-    font-size: 12px;
-  }
-
-  .graph-card-desc {
-    font-size: 10px;
-  }
+  .graph-card-name { font-size: 11px; }
+  .graph-card-desc { font-size: 9px; }
 }
