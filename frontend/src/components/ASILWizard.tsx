@@ -136,7 +136,7 @@ export function ASILWizard({ item, project, onClose, onUpdate }: ASILWizardProps
                 <label key={key} className={`asil-wizard-option ${severity === key ? 'selected' : ''}`}>
                   <input type="radio" name="severity" value={key} checked={severity === key} onChange={() => setSeverity(key)} />
                   <strong>{key}</strong>
-                  <span>{desc}</span>
+                  <span>{String(desc)}</span>
                 </label>
               ))}
             </div>
@@ -161,7 +161,7 @@ export function ASILWizard({ item, project, onClose, onUpdate }: ASILWizardProps
                 <label key={key} className={`asil-wizard-option ${exposure === key ? 'selected' : ''}`}>
                   <input type="radio" name="exposure" value={key} checked={exposure === key} onChange={() => setExposure(key)} />
                   <strong>{key}</strong>
-                  <span>{desc}</span>
+                  <span>{String(desc)}</span>
                 </label>
               ))}
             </div>
@@ -189,7 +189,7 @@ export function ASILWizard({ item, project, onClose, onUpdate }: ASILWizardProps
                 <label key={key} className={`asil-wizard-option ${controllability === key ? 'selected' : ''}`}>
                   <input type="radio" name="controllability" value={key} checked={controllability === key} onChange={() => setControllability(key)} />
                   <strong>{key}</strong>
-                  <span>{desc}</span>
+                  <span>{String(desc)}</span>
                 </label>
               ))}
             </div>

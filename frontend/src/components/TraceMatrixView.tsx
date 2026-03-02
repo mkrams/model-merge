@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { api } from '../services/api';
-import type { ItemType, TraceMatrix } from '../types/safety';
+import type { SafetyProject, ItemType, TraceMatrix } from '../types/safety';
 import '../styles/trace-matrix.css';
 
 interface TraceMatrixViewProps {
@@ -19,7 +19,8 @@ const TYPE_LABELS: Record<ItemType, string> = {
   verification: 'Verification',
 };
 
-export function TraceMatrixView({ project, onProjectChange }: TraceMatrixViewProps) {
+export function TraceMatrixView({ project: _project, onProjectChange }: TraceMatrixViewProps) {
+  void _project; // available for future use
   const [sourceType, setSourceType] = useState<ItemType>('safety_goal');
   const [targetType, setTargetType] = useState<ItemType>('fsr');
   const [matrix, setMatrix] = useState<TraceMatrix | null>(null);

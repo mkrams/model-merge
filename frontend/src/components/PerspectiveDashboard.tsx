@@ -1,4 +1,4 @@
-import type { SafetyProject, CoverageMetrics, ItemType } from '../types/safety';
+import type { SafetyProject, CoverageMetrics } from '../types/safety';
 
 const ASIL_COLORS: Record<string, string> = {
   QM: '#94a3b8', A: '#3b82f6', B: '#f59e0b', C: '#f97316', D: '#ef4444',
