@@ -1,8 +1,8 @@
 import { useState, useRef, useEffect } from 'react';
 import { api } from '../services/api';
 import type {
-  SafetyProject, SafetyChain, DraftResponse, ChainLevel, Perspective,
-  CoverageMetrics, ASILDefinitions,
+  SafetyProject, SafetyChain, ChainLevel, Perspective,
+  CoverageMetrics,
 } from '../types/safety';
 import { ChainCard } from './ChainCard';
 import { GapFiller } from './GapFiller';

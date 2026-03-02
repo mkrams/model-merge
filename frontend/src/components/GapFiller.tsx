@@ -266,7 +266,7 @@ export function GapFiller({ chainId, level, chain, onClose, onUpdate }: GapFille
       {showVersions && versions.length > 0 && (
         <div className="gap-filler-versions">
           <h4>Version History</h4>
-          {versions.map((v, i) => (
+          {versions.map((v: { version: number; text: string; author: string; timestamp: string }, i: number) => (
             <div key={i} className="gap-filler-version">
               <div className="gap-filler-version-header">
                 <span>v{v.version} — {v.author}</span>

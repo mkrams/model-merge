@@ -49,7 +49,7 @@ function LevelBar({ label, counts }: { label: string; counts: { filled: number; 
   );
 }
 
-export function PerspectiveDashboard({ coverage, project }: Props) {
+export function PerspectiveDashboard({ coverage }: Props) {
   const covColor = coverage.coverage_pct >= 80 ? '#10b981' : coverage.coverage_pct >= 50 ? '#f59e0b' : '#ef4444';
   const appColor = coverage.approval_pct >= 80 ? '#10b981' : coverage.approval_pct >= 50 ? '#f59e0b' : '#ef4444';
 
