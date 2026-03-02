@@ -230,31 +230,45 @@ def get_trace_tree(project: SafetyProject, item_id: str) -> dict:
 
 
 def get_trace_matrix(project: SafetyProject, source_type: str, target_type: str) -> dict:
-    """Return matrix of links between two item types."""
+    """Return matrix of links between two item types.
+
+    Returns format expected by frontend TraceMatrixView:
+    {source_type, target_type, sources: [...], targets: [...], cells: [...]}
+    """
     try:
         src_type = ItemType(source_type)
         tgt_type = ItemType(target_type)
     except ValueError:
-        return {"error": f"Invalid item types: {source_type}, {target_type}"}
+        return {"error": f"Invalid item types: {source_type}, {target_type}",
+                "source_type": source_type, "target_type": target_type,
+                "sources": [], "targets": [], "cells": []}
 
     sources = project.get_items_by_type(src_type)
     targets = project.get_items_by_type(tgt_type)
 
-    matrix = []
+    # Build link lookup for fast access
+    link_lookup: dict[tuple[str, str], str] = {}
+    for link in project.links:
+        link_lookup[(link.source_id, link.target_id)] = link.link_id
+
+    cells = []
     for src in sources:
-        row = {"source_id": src.item_id, "source_name": src.name, "targets": []}
         for tgt in targets:
-            # Check if there's a link from src to tgt
-            has_link = any(l.source_id == src.item_id and l.target_id == tgt.item_id for l in project.links)
-            row["targets"].append({
+            key = (src.item_id, tgt.item_id)
+            linked = key in link_lookup
+            cell = {
+                "source_id": src.item_id,
                 "target_id": tgt.item_id,
-                "target_name": tgt.name,
-                "linked": has_link,
-            })
-        matrix.append(row)
+                "linked": linked,
+            }
+            if linked:
+                cell["link_id"] = link_lookup[key]
+            cells.append(cell)
 
     return {
         "source_type": source_type,
         "target_type": target_type,
-        "matrix": matrix,
+        "sources": [s.to_dict() for s in sources],
+        "targets": [t.to_dict() for t in targets],
+        "cells": cells,
     }
