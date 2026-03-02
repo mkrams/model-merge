@@ -15,7 +15,7 @@ from ..models.safety import (
     ItemVersion, compute_asil,
     SEVERITY_DEFS, EXPOSURE_DEFS, CONTROLLABILITY_DEFS, ASIL_COLORS,
 )
-from ..parsers.safety_chain_parser import parse_safety_chain
+from ..parsers.safety_chain_parser import parse_safety_chain, parse_safety_chain_bytes
 from ..safety.ai_assistant import draft_item, revise_draft, suggest_asil_ratings
 from ..analysis.safety_analysis import detect_gaps, compute_coverage, get_perspective
 from ..export.reqif_export import export_to_reqif
@@ -170,15 +170,18 @@ def _get_chain_context(chain: SafetyChain) -> dict:
 
 @router.post("/import")
 async def import_safety_chain(file: UploadFile = File(...)):
-    """Upload a file and extract safety chain items."""
+    """Upload a file and extract safety chain items.
+
+    Supports: .sysml, .reqif, .xml, .csv, .tsv, .xlsx, .xls, .docx
+    """
     try:
-        raw = (await file.read()).decode("utf-8")
+        file_bytes = await file.read()
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Failed to read file: {e}")
 
     filename = file.filename or "unknown"
     try:
-        project = parse_safety_chain(raw, filename)
+        project = parse_safety_chain_bytes(file_bytes, filename)
     except Exception as e:
         logger.error(f"Parse failed: {e}", exc_info=True)
         raise HTTPException(status_code=400, detail=f"Failed to parse: {e}")

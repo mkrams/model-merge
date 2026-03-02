@@ -1,0 +1,37 @@
+ID,Type,Name,Description,ASIL,Status,Parent_ID,Verified_By,Satisfied_By
+HAZ-001,Hazard,Unintended acceleration,"The vehicle accelerates without driver command due to throttle actuator malfunction, potentially leading to collision with objects or pedestrians.",D,approved,,,
+HAZ-002,Hazard,Loss of braking assist,"Electronic braking assist system fails to provide expected braking force during emergency braking, increasing stopping distance.",D,approved,,,
+HAZ-003,Hazard,Unintended lane departure,"Lane keeping assist applies incorrect steering torque causing vehicle to depart lane into oncoming traffic.",C,approved,,,
+HAZ-004,Hazard,False forward collision warning,"Forward collision warning system fails to detect obstacle ahead, providing no warning before impact.",B,approved,,,
+HAZ-005,Hazard,Unintended steering intervention,"Electric power steering system applies unintended torque to steering column during highway driving.",D,approved,,,
+HAZ-006,Hazard,Radar sensor blindness,"Front-facing radar fails to detect stationary or slow-moving vehicles due to sensor degradation or interference.",C,approved,,,
+HAZ-007,Hazard,Camera perception failure,"Camera-based perception system misclassifies pedestrian as non-hazardous object in low-light conditions.",C,draft,,,
+HE-001,Hazardous Event,Unintended acceleration on highway,"Vehicle accelerates unexpectedly while traveling at highway speed (>100 km/h) in moderate traffic, driver cannot immediately override throttle.",D,approved,HAZ-001,,
+HE-002,Hazardous Event,Brake assist failure during emergency stop,"Braking assist fails during emergency braking at 60 km/h in urban environment with pedestrian crossing ahead.",D,approved,HAZ-002,,
+HE-003,Hazardous Event,Lane departure into oncoming traffic,"Lane keeping assist steers vehicle left across center line into oncoming traffic on a two-lane rural road at 80 km/h.",C,approved,HAZ-003,,
+HE-004,Hazardous Event,Missing FCW at highway speed,"Forward collision warning fails to alert driver of stopped vehicle ahead while traveling at 120 km/h on highway.",B,approved,HAZ-004,,
+HE-005,Hazardous Event,Steering torque during lane change,"EPS applies 5 Nm unintended torque during active lane change at 130 km/h on highway.",D,approved,HAZ-005,,
+HE-006,Hazardous Event,Radar miss of stationary vehicle,"Radar fails to detect stationary vehicle in own lane while approaching at 80 km/h; no AEB trigger.",C,draft,HAZ-006,,
+HE-007,Hazardous Event,Pedestrian misclassification at night,"Camera system classifies pedestrian on crosswalk as road furniture during nighttime driving at 50 km/h in urban area.",C,draft,HAZ-007,,
+SG-001,Safety Goal,Prevent unintended acceleration,"The system shall prevent unintended vehicle acceleration exceeding 0.3 m/s² without valid driver throttle input.",D,approved,HE-001,,
+SG-002,Safety Goal,Ensure minimum braking performance,"The system shall ensure braking deceleration of at least 6.5 m/s² is achievable at all times when brake pedal is applied.",D,approved,HE-002,,
+SG-003,Safety Goal,Prevent unsafe lane departure,"The system shall not apply steering torque that causes the vehicle to depart its lane into adjacent lanes with oncoming traffic.",C,approved,HE-003,,
+SG-004,Safety Goal,Ensure forward collision detection,"The system shall detect obstacles in the vehicle path and provide timely warning to the driver with sufficient time-to-collision margin (>2.5s).",B,approved,HE-004,,
+SG-005,Safety Goal,Limit unintended steering torque,"The system shall limit unintended EPS torque to less than 3 Nm and provide torque feedback consistent with driver steering input.",D,draft,HE-005,,
+SG-006,Safety Goal,Ensure radar detection reliability,"The system shall maintain radar detection capability for objects larger than 1m² at ranges up to 150m with probability of detection >99.5%.",C,,HE-006,,
+SG-007,Safety Goal,Ensure pedestrian classification accuracy,"The system shall correctly classify pedestrians with >99% accuracy in all lighting conditions within the operational design domain.",C,,HE-007,,
+FSR-001,FSR,Throttle monitoring and limitation,"The system shall independently monitor commanded vs. actual throttle position and cut fuel injection within 100ms if deviation exceeds 5% without driver input.",D,approved,SG-001,,TC-001
+FSR-002,FSR,Redundant throttle position sensing,"The system shall use two independent throttle position sensors with cross-checking; disagreement >3% shall trigger safe state within 50ms.",D,approved,SG-001,,TC-002
+FSR-003,FSR,Brake force monitoring,"The system shall continuously monitor brake hydraulic pressure and wheel deceleration; if brake assist output deviates >15% from commanded value, alert driver and activate backup braking within 200ms.",D,approved,SG-002,,TC-003
+FSR-004,FSR,Brake system self-test,"The system shall perform brake actuator self-test at each ignition cycle and disable brake assist with driver warning if test fails.",D,draft,SG-002,,
+FSR-005,FSR,Steering torque limitation,"The system shall limit LKA steering intervention torque to 3 Nm maximum and provide haptic override capability requiring <5 Nm driver counter-torque.",C,approved,SG-003,,TC-005
+FSR-006,FSR,Lane departure direction check,"The system shall verify lane departure direction against oncoming traffic detection before applying corrective steering; shall not steer toward detected oncoming vehicles.",C,draft,SG-003,,
+FSR-007,FSR,FCW minimum detection range,"The system shall detect and classify vehicles at minimum 120m range with time-to-collision computation updated at 20 Hz minimum.",B,approved,SG-004,,TC-007
+FSR-008,FSR,EPS torque arbitration,"The system shall implement torque arbitration logic ensuring driver steering input always takes priority over automated steering commands within 20ms.",D,draft,SG-005,,
+FSR-009,FSR,Radar performance monitoring,"The system shall continuously monitor radar signal quality metrics (SNR, clutter level, target consistency) and degrade gracefully with driver notification when performance falls below threshold.",C,,SG-006,,
+FSR-010,FSR,Multi-sensor pedestrian fusion,"The system shall fuse camera and radar data for pedestrian detection using independent classification algorithms; disagreement between sensors shall trigger conservative (assume-pedestrian) behavior.",C,,SG-007,,
+TC-001,Test Case,Throttle monitoring response test,"Verify throttle monitoring cuts fuel injection within 100ms when throttle deviation >5% is injected.",D,approved,FSR-001,,
+TC-002,Test Case,Redundant sensor disagreement test,"Inject 4% disagreement between throttle sensors and verify safe state activation within 50ms.",D,approved,FSR-002,,
+TC-003,Test Case,Brake assist deviation response,"Simulate 20% brake force deviation and verify driver alert + backup braking activation within 200ms.",D,draft,FSR-003,,
+TC-005,Test Case,LKA torque override test,"Apply 6 Nm driver counter-torque during active LKA intervention and verify system yields within 50ms.",C,approved,FSR-005,,
+TC-007,Test Case,FCW detection range validation,"Present target vehicle at 120m range and verify detection and TTC computation at 20 Hz update rate.",B,approved,FSR-007,,

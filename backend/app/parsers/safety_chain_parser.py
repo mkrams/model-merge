@@ -1,6 +1,6 @@
 """Parse imported files and extract safety chain items (Hazard → TestCase).
 
-Supports: ReqIF, SysML v2, CSV/Excel.
+Supports: ReqIF, SysML v2, CSV/TSV, Excel (.xlsx/.xls), Word (.docx).
 Strategy: heuristic classification based on naming patterns, attribute names,
 package names, and requirement ID prefixes.
 """
@@ -9,6 +9,8 @@ import logging
 import re
 import csv
 import io
+import tempfile
+from pathlib import Path
 from typing import Optional
 
 from ..models.safety import (
@@ -340,13 +342,26 @@ def parse_reqif_safety(raw_text: str, filename: str) -> SafetyProject:
 # ── CSV / Excel Import ───────────────────────────────────────────
 
 def parse_csv_safety(raw_text: str, filename: str) -> SafetyProject:
-    """Parse CSV/TSV and build safety chains. Expects columns matching chain levels."""
+    """Parse CSV/TSV and build safety chains.
+
+    Supports TWO formats:
+    1. Row-per-chain: columns like 'hazard', 'safety goal', 'fsr', 'test case'
+    2. Row-per-item: columns like 'ID', 'Type', 'Name', 'Description', 'Parent_ID'
+       Items are linked via Parent_ID to build chains.
+    """
     project = SafetyProject(name=filename, source_filename=filename)
-
     reader = csv.DictReader(io.StringIO(raw_text))
-    headers = [h.lower().strip() for h in (reader.fieldnames or [])]
+    headers_raw = reader.fieldnames or []
+    headers = [h.lower().strip() for h in headers_raw]
 
-    # Map column names to chain levels
+    # Detect format: does it have 'type' and 'id' columns?
+    has_type = any("type" in h for h in headers)
+    has_id = any(h in ("id", "req_id", "item_id") for h in headers)
+
+    if has_type and has_id:
+        return _parse_csv_row_per_item(reader, headers_raw, filename)
+
+    # ── Format 1: Row-per-chain ──
     col_map = {}
     for h in headers:
         if any(k in h for k in ["hazard"]):
@@ -365,14 +380,12 @@ def parse_csv_safety(raw_text: str, filename: str) -> SafetyProject:
     for row in reader:
         chain = SafetyChain()
 
-        # Hazard
         haz_text = row.get(col_map.get("hazard", ""), "").strip()
         if haz_text:
             chain.hazard = Hazard(name=haz_text, description=haz_text, status="draft")
         else:
             chain.hazard = Hazard(status="gap")
 
-        # Hazardous Event
         he_text = row.get(col_map.get("hazardous_event", ""), "").strip()
         if he_text:
             chain.hazardous_event = HazardousEvent(
@@ -380,12 +393,10 @@ def parse_csv_safety(raw_text: str, filename: str) -> SafetyProject:
                 hazard_id=chain.hazard.id if chain.hazard else "", status="draft",
             )
 
-        # ASIL
         asil_text = row.get(col_map.get("asil", ""), "").strip().upper()
         if asil_text and asil_text in ("QM", "A", "B", "C", "D"):
             chain.asil_determination = ASILDetermination(asil_level=asil_text)
 
-        # Safety Goal
         sg_text = row.get(col_map.get("safety_goal", ""), "").strip()
         if sg_text:
             chain.safety_goal = SafetyGoal(
@@ -396,7 +407,6 @@ def parse_csv_safety(raw_text: str, filename: str) -> SafetyProject:
         else:
             chain.safety_goal = SafetyGoal(status="gap")
 
-        # FSR
         fsr_text = row.get(col_map.get("fsr", ""), "").strip()
         if fsr_text:
             chain.fsr = FSR(
@@ -405,7 +415,6 @@ def parse_csv_safety(raw_text: str, filename: str) -> SafetyProject:
                 status="draft",
             )
 
-        # Test Case
         tc_text = row.get(col_map.get("test_case", ""), "").strip()
         if tc_text:
             chain.test_case = TestCase(
@@ -417,7 +426,182 @@ def parse_csv_safety(raw_text: str, filename: str) -> SafetyProject:
             project.chains.append(chain)
 
     _fill_chain_gaps(project)
-    logger.info(f"Parsed CSV safety: {len(project.chains)} chains, {project.total_gaps} gaps")
+    logger.info(f"Parsed CSV safety (row-per-chain): {len(project.chains)} chains, {project.total_gaps} gaps")
+    return project
+
+
+def _parse_csv_row_per_item(reader, headers_raw: list[str], filename: str) -> SafetyProject:
+    """Parse CSV where each row is a single safety item with ID, Type, Name, Description, Parent_ID."""
+    project = SafetyProject(name=filename, source_filename=filename)
+
+    # Build column accessor (case-insensitive)
+    def _col(row: dict, *candidates: str) -> str:
+        for c in candidates:
+            for key in row:
+                if key.lower().strip() == c.lower():
+                    return (row[key] or "").strip()
+        return ""
+
+    # First pass: collect all items by ID
+    items: dict[str, dict] = {}
+    rows_list = list(reader)
+    for row in rows_list:
+        item_id = _col(row, "id", "req_id", "item_id")
+        if not item_id:
+            continue
+        item_type = _col(row, "type").lower()
+        name = _col(row, "name", "title")
+        desc = _col(row, "description", "text", "doc")
+        asil = _col(row, "asil", "asil_level").upper()
+        status = _col(row, "status").lower() or "draft"
+        parent = _col(row, "parent_id", "parent", "derived_from")
+        verified_by = _col(row, "verified_by", "verification")
+        satisfied_by = _col(row, "satisfied_by", "satisfaction")
+
+        # Classify type
+        level = ""
+        if any(k in item_type for k in ["hazardous event", "haz event", "he"]) or item_id.upper().startswith("HE-"):
+            level = "hazardous_event"
+        elif any(k in item_type for k in ["hazard"]) or item_id.upper().startswith("HAZ-"):
+            level = "hazard"
+        elif any(k in item_type for k in ["safety goal"]) or item_id.upper().startswith("SG-"):
+            level = "safety_goal"
+        elif any(k in item_type for k in ["fsr", "functional safety"]) or item_id.upper().startswith("FSR-"):
+            level = "fsr"
+        elif any(k in item_type for k in ["test", "tc"]) or item_id.upper().startswith("TC-"):
+            level = "test_case"
+
+        if not level:
+            continue
+
+        items[item_id] = {
+            "id": item_id, "level": level, "name": name, "description": desc,
+            "asil": asil if asil in ("QM", "A", "B", "C", "D") else "",
+            "status": status if status in ("draft", "approved", "review", "gap") else "draft",
+            "parent": parent, "verified_by": verified_by, "satisfied_by": satisfied_by,
+        }
+
+    # Second pass: build chains by tracing from hazards down
+    hazards = {k: v for k, v in items.items() if v["level"] == "hazard"}
+    used_ids: set[str] = set()
+
+    for haz_id, haz in hazards.items():
+        # Find hazardous events linked to this hazard
+        hes = [v for v in items.values() if v["level"] == "hazardous_event" and v["parent"] == haz_id]
+        if not hes:
+            hes = [None]  # type: ignore
+
+        for he in hes:
+            # Find safety goals linked to this HE (or hazard)
+            parent_for_sg = he["id"] if he else haz_id
+            sgs = [v for v in items.values() if v["level"] == "safety_goal" and v["parent"] == parent_for_sg]
+            if not sgs:
+                sgs = [v for v in items.values() if v["level"] == "safety_goal" and v["parent"] == haz_id]
+            if not sgs:
+                sgs = [None]  # type: ignore
+
+            for sg in sgs:
+                parent_for_fsr = sg["id"] if sg else parent_for_sg
+                fsrs = [v for v in items.values() if v["level"] == "fsr" and v["parent"] == parent_for_fsr]
+                if not fsrs:
+                    fsrs = [None]  # type: ignore
+
+                for fsr_item in fsrs:
+                    # Find test cases
+                    tc = None
+                    if fsr_item:
+                        # Check Verified_By on the FSR
+                        vb = fsr_item.get("verified_by", "")
+                        if vb and vb in items:
+                            tc = items[vb]
+                        else:
+                            # Check TCs that reference this FSR
+                            tcs = [v for v in items.values() if v["level"] == "test_case" and v["parent"] == fsr_item["id"]]
+                            tc = tcs[0] if tcs else None
+
+                    chain = SafetyChain()
+
+                    # Hazard
+                    chain.hazard = Hazard(
+                        name=haz["name"], description=haz["description"],
+                        status=haz["status"], approved=(haz["status"] == "approved"),
+                    )
+                    used_ids.add(haz_id)
+
+                    # HE
+                    if he:
+                        chain.hazardous_event = HazardousEvent(
+                            name=he["name"], description=he["description"],
+                            hazard_id=chain.hazard.id, status=he["status"],
+                            approved=(he["status"] == "approved"),
+                        )
+                        used_ids.add(he["id"])
+
+                    # ASIL (from highest priority source)
+                    asil_val = ""
+                    for src in [sg, he, haz]:
+                        if src and src.get("asil"):
+                            asil_val = src["asil"]
+                            break
+                    if asil_val:
+                        chain.asil_determination = ASILDetermination(asil_level=asil_val, approved=True)
+
+                    # SG
+                    if sg:
+                        chain.safety_goal = SafetyGoal(
+                            name=sg["name"], description=sg["description"],
+                            hazard_id=chain.hazard.id, asil_level=asil_val,
+                            status=sg["status"], approved=(sg["status"] == "approved"),
+                        )
+                        used_ids.add(sg["id"])
+
+                    # FSR
+                    if fsr_item:
+                        chain.fsr = FSR(
+                            name=fsr_item["name"], description=fsr_item["description"],
+                            safety_goal_id=chain.safety_goal.id if chain.safety_goal else "",
+                            asil_level=asil_val, status=fsr_item["status"],
+                            approved=(fsr_item["status"] == "approved"),
+                        )
+                        used_ids.add(fsr_item["id"])
+
+                    # TC
+                    if tc:
+                        chain.test_case = TestCase(
+                            name=tc["name"], description=tc["description"],
+                            fsr_id=chain.fsr.id if chain.fsr else "",
+                            status=tc["status"], approved=(tc["status"] == "approved"),
+                        )
+                        used_ids.add(tc["id"])
+
+                    project.chains.append(chain)
+
+    # Third pass: orphan items not in any chain — create partial chains for them
+    for item_id, item in items.items():
+        if item_id in used_ids:
+            continue
+        chain = SafetyChain()
+        lvl = item["level"]
+        asil_val = item.get("asil", "")
+
+        if lvl == "hazard":
+            chain.hazard = Hazard(name=item["name"], description=item["description"], status=item["status"])
+        elif lvl == "hazardous_event":
+            chain.hazardous_event = HazardousEvent(name=item["name"], description=item["description"], status=item["status"])
+        elif lvl == "safety_goal":
+            chain.safety_goal = SafetyGoal(name=item["name"], description=item["description"], asil_level=asil_val, status=item["status"])
+        elif lvl == "fsr":
+            chain.fsr = FSR(name=item["name"], description=item["description"], asil_level=asil_val, status=item["status"])
+        elif lvl == "test_case":
+            chain.test_case = TestCase(name=item["name"], description=item["description"], status=item["status"])
+
+        if asil_val:
+            chain.asil_determination = ASILDetermination(asil_level=asil_val)
+
+        project.chains.append(chain)
+
+    _fill_chain_gaps(project)
+    logger.info(f"Parsed CSV safety (row-per-item): {len(project.chains)} chains, {project.total_gaps} gaps")
     return project
 
 
@@ -448,10 +632,245 @@ def _fill_chain_gaps(project: SafetyProject):
             )
 
 
+# ── Excel Import ──────────────────────────────────────────────────
+
+def parse_excel_safety(file_bytes: bytes, filename: str) -> SafetyProject:
+    """Parse .xlsx/.xls file and build safety chains.
+
+    Reads the first sheet (or a sheet named 'requirements', 'hazards', 'safety', etc.).
+    Then converts to CSV-like rows and delegates to CSV parser logic.
+    """
+    try:
+        import openpyxl
+    except ImportError:
+        raise RuntimeError("openpyxl required for Excel import — pip install openpyxl")
+
+    wb = openpyxl.load_workbook(io.BytesIO(file_bytes), read_only=True, data_only=True)
+
+    # Pick the best sheet
+    sheet = None
+    preferred = ["requirements", "hazards", "safety", "asil", "fsr", "chains"]
+    for name in wb.sheetnames:
+        if any(p in name.lower() for p in preferred):
+            sheet = wb[name]
+            break
+    if sheet is None:
+        sheet = wb.active or wb[wb.sheetnames[0]]
+
+    # Read all rows into CSV text
+    rows = list(sheet.iter_rows(values_only=True))
+    if not rows:
+        return SafetyProject(name=filename, source_filename=filename)
+
+    # First non-empty row as header
+    header_row = None
+    data_start = 0
+    for i, row in enumerate(rows):
+        if any(cell is not None for cell in row):
+            header_row = row
+            data_start = i + 1
+            break
+
+    if header_row is None:
+        return SafetyProject(name=filename, source_filename=filename)
+
+    # Build CSV string
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow([str(h or "").strip() for h in header_row])
+    for row in rows[data_start:]:
+        if any(cell is not None for cell in row):
+            writer.writerow([str(cell or "").strip() for cell in row])
+
+    csv_text = output.getvalue()
+    wb.close()
+
+    # Parse using CSV logic
+    project = parse_csv_safety(csv_text, filename)
+    logger.info(f"Parsed Excel safety: {len(project.chains)} chains")
+    return project
+
+
+# ── Word (.docx) Import ──────────────────────────────────────────
+
+def parse_docx_safety(file_bytes: bytes, filename: str) -> SafetyProject:
+    """Parse .docx file and extract safety items from tables and text.
+
+    Looks for:
+    1. Tables with columns matching safety chain levels
+    2. Structured headings like "Hazard:", "Safety Goal:", etc.
+    3. Numbered/bulleted requirements with ID prefixes (HAZ-, SG-, FSR-, TC-)
+    """
+    try:
+        from docx import Document
+    except ImportError:
+        raise RuntimeError("python-docx required for Word import — pip install python-docx")
+
+    doc = Document(io.BytesIO(file_bytes))
+
+    # Strategy 1: Try tables first
+    for table in doc.tables:
+        result = _parse_docx_table(table, filename)
+        if result and len(result.chains) > 0:
+            return result
+
+    # Strategy 2: Parse structured text
+    return _parse_docx_text(doc, filename)
+
+
+def _parse_docx_table(table, filename: str) -> Optional[SafetyProject]:
+    """Parse a Word table into safety items."""
+    rows = []
+    for row in table.rows:
+        cells = [cell.text.strip() for cell in row.cells]
+        rows.append(cells)
+
+    if len(rows) < 2:
+        return None
+
+    # Use first row as headers
+    headers = rows[0]
+    if not any(h.lower() for h in headers if h):
+        return None
+
+    # Build CSV text from table
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(headers)
+    for row in rows[1:]:
+        # Pad/trim to header length
+        padded = row[:len(headers)] + [""] * max(0, len(headers) - len(row))
+        writer.writerow(padded)
+
+    csv_text = output.getvalue()
+
+    try:
+        project = parse_csv_safety(csv_text, filename)
+        return project if project.chains else None
+    except Exception:
+        return None
+
+
+_DOCX_LEVEL_PATTERNS = {
+    "hazard": re.compile(r"(?:HAZ[-_]?\d+|Hazard\s*:)", re.IGNORECASE),
+    "hazardous_event": re.compile(r"(?:HE[-_]?\d+|Hazardous\s+Event\s*:)", re.IGNORECASE),
+    "safety_goal": re.compile(r"(?:SG[-_]?\d+|Safety\s+Goal\s*:)", re.IGNORECASE),
+    "fsr": re.compile(r"(?:FSR[-_]?\d+|Functional\s+Safety\s+Req)", re.IGNORECASE),
+    "test_case": re.compile(r"(?:TC[-_]?\d+|Test\s+Case\s*:)", re.IGNORECASE),
+}
+
+
+def _parse_docx_text(doc, filename: str) -> SafetyProject:
+    """Parse structured text from Word document paragraphs."""
+    project = SafetyProject(name=filename, source_filename=filename)
+
+    items: list[dict] = []
+    current_item: Optional[dict] = None
+
+    for para in doc.paragraphs:
+        text = para.text.strip()
+        if not text:
+            continue
+
+        # Check if this line starts a new item
+        matched_level = None
+        for level, pattern in _DOCX_LEVEL_PATTERNS.items():
+            if pattern.search(text):
+                matched_level = level
+                break
+
+        if matched_level:
+            if current_item:
+                items.append(current_item)
+
+            # Extract ID if present
+            id_match = re.match(r"((?:HAZ|HE|SG|FSR|TC)[-_]?\d+)\s*[:\-–]\s*(.*)", text, re.IGNORECASE)
+            if id_match:
+                item_id = id_match.group(1).upper().replace("_", "-")
+                name = id_match.group(2).strip()
+            else:
+                item_id = f"{matched_level.upper()}-AUTO-{len(items)+1}"
+                # Strip "Hazard:" prefix etc.
+                name = re.sub(r"^(?:Hazard|Hazardous\s+Event|Safety\s+Goal|FSR|Test\s+Case)\s*:\s*",
+                             "", text, flags=re.IGNORECASE).strip()
+
+            current_item = {
+                "id": item_id, "level": matched_level,
+                "name": name, "description": "", "asil": "", "status": "draft",
+                "parent": "",
+            }
+        elif current_item:
+            # Continuation of current item — append as description
+            if current_item["description"]:
+                current_item["description"] += "\n" + text
+            else:
+                current_item["description"] = text
+
+            # Check for ASIL mention
+            asil_match = re.search(r"ASIL\s*[:\-]?\s*([ABCD]|QM)", text, re.IGNORECASE)
+            if asil_match:
+                current_item["asil"] = asil_match.group(1).upper()
+
+    if current_item:
+        items.append(current_item)
+
+    if not items:
+        return project
+
+    # Build chains from items (simple grouping — try to link by proximity and ASIL)
+    # Group by level and build chains
+    by_level: dict[str, list[dict]] = {"hazard": [], "hazardous_event": [],
+                                        "safety_goal": [], "fsr": [], "test_case": []}
+    for item in items:
+        if item["level"] in by_level:
+            by_level[item["level"]].append(item)
+
+    # Build chains: pair items by order (1st hazard → 1st SG → 1st FSR → 1st TC)
+    max_len = max(len(v) for v in by_level.values()) if by_level else 0
+    for i in range(max_len):
+        chain = SafetyChain()
+
+        haz = by_level["hazard"][i] if i < len(by_level["hazard"]) else None
+        he = by_level["hazardous_event"][i] if i < len(by_level["hazardous_event"]) else None
+        sg = by_level["safety_goal"][i] if i < len(by_level["safety_goal"]) else None
+        fsr_item = by_level["fsr"][i] if i < len(by_level["fsr"]) else None
+        tc = by_level["test_case"][i] if i < len(by_level["test_case"]) else None
+
+        asil_val = ""
+        for src in [sg, he, haz, fsr_item]:
+            if src and src.get("asil"):
+                asil_val = src["asil"]
+                break
+
+        if haz:
+            chain.hazard = Hazard(name=haz["name"], description=haz.get("description", ""), status="draft")
+        if he:
+            chain.hazardous_event = HazardousEvent(name=he["name"], description=he.get("description", ""), status="draft")
+        if asil_val:
+            chain.asil_determination = ASILDetermination(asil_level=asil_val)
+        if sg:
+            chain.safety_goal = SafetyGoal(name=sg["name"], description=sg.get("description", ""), asil_level=asil_val, status="draft")
+        if fsr_item:
+            chain.fsr = FSR(name=fsr_item["name"], description=fsr_item.get("description", ""), status="draft")
+        if tc:
+            chain.test_case = TestCase(name=tc["name"], description=tc.get("description", ""), status="draft")
+
+        project.chains.append(chain)
+
+    _fill_chain_gaps(project)
+    logger.info(f"Parsed DOCX safety: {len(project.chains)} chains, {project.total_gaps} gaps")
+    return project
+
+
 # ── Main entry point ─────────────────────────────────────────────
 
 def parse_safety_chain(raw_text: str, filename: str) -> SafetyProject:
-    """Auto-detect format and parse safety chain items."""
+    """Auto-detect format and parse safety chain items.
+
+    For text-based formats (CSV, ReqIF, SysML), raw_text is the file content.
+    For binary formats (xlsx, docx), raw_text should be the base64/raw string
+    — but those are handled via parse_safety_chain_bytes() instead.
+    """
     fname = filename.lower()
     if fname.endswith(".reqif") or fname.endswith(".xml"):
         return parse_reqif_safety(raw_text, filename)
@@ -460,3 +879,16 @@ def parse_safety_chain(raw_text: str, filename: str) -> SafetyProject:
     else:
         # Default: SysML v2
         return parse_sysml_safety(raw_text, filename)
+
+
+def parse_safety_chain_bytes(file_bytes: bytes, filename: str) -> SafetyProject:
+    """Parse binary file formats (Excel, Word) or fall back to text parser."""
+    fname = filename.lower()
+    if fname.endswith(".xlsx") or fname.endswith(".xls"):
+        return parse_excel_safety(file_bytes, filename)
+    elif fname.endswith(".docx"):
+        return parse_docx_safety(file_bytes, filename)
+    else:
+        # Text-based: decode and use text parser
+        raw_text = file_bytes.decode("utf-8", errors="replace")
+        return parse_safety_chain(raw_text, filename)

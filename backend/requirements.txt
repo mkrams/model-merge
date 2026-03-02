@@ -5,3 +5,5 @@ python-multipart
 aiofiles
 reqif
 httpx
+openpyxl
+python-docx

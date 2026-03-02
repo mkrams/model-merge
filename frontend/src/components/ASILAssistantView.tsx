@@ -143,7 +143,7 @@ export function ASILAssistantView() {
       <div className="asil-upload">
         <h2>ASIL Assistant</h2>
         <p className="asil-upload-desc">
-          Import an existing requirements file (SysML v2, ReqIF, or CSV) to analyze the
+          Import an existing requirements file (SysML v2, ReqIF, CSV, Excel, or Word) to analyze the
           ISO 26262 safety chain. The tool identifies hazards, safety goals, FSRs, and
           test cases — then highlights gaps for AI-assisted completion.
         </p>
@@ -152,7 +152,7 @@ export function ASILAssistantView() {
           <input
             ref={fileRef}
             type="file"
-            accept=".sysml,.reqif,.xml,.csv,.tsv"
+            accept=".sysml,.reqif,.xml,.csv,.tsv,.xlsx,.xls,.docx"
             className="asil-file-input"
             onChange={(e) => setFile(e.target.files?.[0] || null)}
           />
