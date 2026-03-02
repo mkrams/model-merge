@@ -135,7 +135,7 @@ export const api = {
   },
 
   async approveItem(itemId: string): Promise<SafetyItem> {
-    const { data } = await client.post(`/asil/item/${itemId}/approve`);
+    const { data } = await client.post(`/asil/item/${itemId}/approve`, { item_id: itemId });
     return data;
   },
 
@@ -162,12 +162,12 @@ export const api = {
 
   // AI-assisted drafting and revision
   async draftItem(itemId: string, feedback?: string): Promise<DraftResponse> {
-    const { data } = await client.post(`/asil/draft/${itemId}`, { feedback: feedback || '' });
+    const { data } = await client.post(`/asil/item/${itemId}/draft`, { item_id: itemId, feedback: feedback || '' });
     return data;
   },
 
   async reviseItem(itemId: string, instruction: string): Promise<DraftResponse> {
-    const { data } = await client.post(`/asil/revise/${itemId}`, { instruction });
+    const { data } = await client.post(`/asil/item/${itemId}/revise`, { item_id: itemId, instruction });
     return data;
   },
 

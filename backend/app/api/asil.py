@@ -475,7 +475,7 @@ async def load_data(req: LoadRequest):
     if not project:
         raise HTTPException(status_code=404, detail=f"No project found for user {req.username}")
     _current_project = project
-    return project.to_dict()
+    return {"projects": [project.to_dict()], "count": 1}
 
 
 @router.get("/definitions")
