@@ -66,6 +66,24 @@ You provide clear rationale for each rating based on the hazard context.
 Respond in JSON format when asked for structured output."""
 
 
+# ── JSON Extraction Helper ───────────────────────────────────────
+
+def _extract_json(text: str) -> dict | None:
+    """Try to extract JSON from response, handling markdown fences."""
+    cleaned = text.strip()
+    # Strip markdown code fences
+    if cleaned.startswith("```"):
+        lines = cleaned.split("\n")
+        # Remove first line (```json or ```) and last line (```)
+        start = 1
+        end = len(lines) - 1 if lines[-1].strip() == "```" else len(lines)
+        cleaned = "\n".join(lines[start:end]).strip()
+    try:
+        return json.loads(cleaned)
+    except (json.JSONDecodeError, TypeError):
+        return None
+
+
 # ── Drafting Functions ───────────────────────────────────────────
 
 async def draft_item(
@@ -110,9 +128,8 @@ async def draft_item(
 
     response_text = await _call_claude(SAFETY_SYSTEM, messages)
 
-    # Try to parse JSON if it looks like JSON
-    try:
-        result = json.loads(response_text)
+    result = _extract_json(response_text)
+    if result:
         return {
             "text": result.get("description", result.get("text", response_text)),
             "name": result.get("name", ""),
@@ -120,14 +137,16 @@ async def draft_item(
             "steps": result.get("steps", ""),
             "expected_result": result.get("expected_result", ""),
             "pass_criteria": result.get("pass_criteria", ""),
+            "safe_state": result.get("safe_state", ""),
+            "testable_criterion": result.get("testable_criterion", ""),
+            "operating_situation": result.get("operating_situation", ""),
         }
-    except (json.JSONDecodeError, TypeError):
-        # Plain text response
-        return {
-            "text": response_text,
-            "name": "",
-            "rationale": "",
-        }
+    # Plain text response
+    return {
+        "text": response_text,
+        "name": "",
+        "rationale": "",
+    }
 
 
 async def revise_draft(
@@ -139,6 +158,18 @@ async def revise_draft(
 ) -> dict:
     """Revise a draft based on user feedback."""
     messages = list(conversation_history or [])
+
+    # Build level-specific field list
+    fields = '"name": "short name", "description": "revised full text", "rationale": "why this revision"'
+    if level == "test_case":
+        fields += ', "steps": "1. step\\n2. step", "expected_result": "expected outcome", "pass_criteria": "measurable pass/fail criteria"'
+    elif level == "safety_goal":
+        fields += ', "safe_state": "the defined safe state"'
+    elif level == "fsr":
+        fields += ', "testable_criterion": "how to verify this requirement"'
+    elif level == "hazardous_event":
+        fields += ', "operating_situation": "the driving/operational situation"'
+
     messages.append({
         "role": "user",
         "content": f"""Current draft for {level}:
@@ -150,19 +181,24 @@ Context about the safety chain:
 {_format_context(chain_context)}
 
 Please provide a revised version. Respond with JSON:
-{{"name": "short name", "description": "revised full text", "rationale": "why this revision"}}""",
+{{{fields}}}""",
     })
 
     response_text = await _call_claude(SAFETY_SYSTEM, messages)
-    try:
-        result = json.loads(response_text)
+    result = _extract_json(response_text)
+    if result:
         return {
             "text": result.get("description", result.get("text", response_text)),
             "name": result.get("name", ""),
             "rationale": result.get("rationale", ""),
+            "steps": result.get("steps", ""),
+            "expected_result": result.get("expected_result", ""),
+            "pass_criteria": result.get("pass_criteria", ""),
+            "safe_state": result.get("safe_state", ""),
+            "testable_criterion": result.get("testable_criterion", ""),
+            "operating_situation": result.get("operating_situation", ""),
         }
-    except (json.JSONDecodeError, TypeError):
-        return {"text": response_text, "name": "", "rationale": ""}
+    return {"text": response_text, "name": "", "rationale": ""}
 
 
 async def suggest_asil_ratings(hazard_description: str) -> dict:
@@ -185,14 +221,14 @@ Respond with JSON:
     }]
 
     response_text = await _call_claude(ASIL_SYSTEM, messages)
-    try:
-        return json.loads(response_text)
-    except (json.JSONDecodeError, TypeError):
-        return {
-            "severity": "", "severity_rationale": response_text,
-            "exposure": "", "exposure_rationale": "",
-            "controllability": "", "controllability_rationale": "",
-        }
+    result = _extract_json(response_text)
+    if result:
+        return result
+    return {
+        "severity": "", "severity_rationale": response_text,
+        "exposure": "", "exposure_rationale": "",
+        "controllability": "", "controllability_rationale": "",
+    }
 
 
 # ── Prompt Builders ──────────────────────────────────────────────

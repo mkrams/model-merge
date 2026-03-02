@@ -177,13 +177,33 @@ def _collect_from_packages(packages, requirements, connections, parent_pkg):
     for pkg in packages:
         pkg_name = pkg.name if hasattr(pkg, 'name') else str(pkg)
         for req in getattr(pkg, 'requirement_defs', []):
+            doc = getattr(req, 'doc', '') or ''
+            raw = getattr(req, 'raw', '') or ''
+            # Fallback: build description from attributes if doc is empty
+            attrs = [(a.name, a.default_value or '') for a in getattr(req, 'attributes', [])]
+            if not doc:
+                # Try common attribute names for the requirement text
+                for aname, aval in attrs:
+                    aname_l = aname.lower()
+                    if aval and any(k in aname_l for k in ['description', 'text', 'content', 'reqif.text', 'object text']):
+                        doc = aval
+                        break
+            # Still empty? Use raw text or first attribute with substantial value
+            if not doc and raw:
+                doc = raw[:500]
+            if not doc:
+                for aname, aval in attrs:
+                    if aval and len(aval) > 10:
+                        doc = aval
+                        break
             requirements.append({
                 "name": req.name,
-                "doc": getattr(req, 'doc', ''),
+                "doc": doc,
                 "req_id": getattr(req, 'req_id', ''),
                 "package": pkg_name,
                 "constraints": [c.expression for c in getattr(req, 'constraints', [])],
-                "attributes": [(a.name, a.default_value) for a in getattr(req, 'attributes', [])],
+                "attributes": attrs,
+                "raw": raw,
             })
         for conn in getattr(pkg, 'connections', []):
             connections.append({

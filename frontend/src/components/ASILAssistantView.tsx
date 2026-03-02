@@ -9,11 +9,11 @@ import { GapFiller } from './GapFiller';
 import { ASILWizard } from './ASILWizard';
 import { PerspectiveDashboard } from './PerspectiveDashboard';
 
-const PERSPECTIVES: { key: Perspective; label: string; icon: string }[] = [
-  { key: 'safety_engineer', label: 'Safety Engineer', icon: '\u{1F6E1}' },
-  { key: 'test_engineer', label: 'Test Engineer', icon: '\u{1F9EA}' },
-  { key: 'req_engineer', label: 'Requirements', icon: '\u{1F4CB}' },
-  { key: 'manager', label: 'Manager', icon: '\u{1F4CA}' },
+const PERSPECTIVES: { key: Perspective; label: string; icon: string; hint: string }[] = [
+  { key: 'safety_engineer', label: 'Safety Engineer', icon: '\u{1F6E1}', hint: 'Top-down view sorted by ASIL severity. Focus on hazard analysis and safety goals.' },
+  { key: 'test_engineer', label: 'Test Engineer', icon: '\u{1F9EA}', hint: 'Bottom-up view highlighting missing test cases and unverified FSRs.' },
+  { key: 'req_engineer', label: 'Requirements', icon: '\u{1F4CB}', hint: 'FSR-focused view sorted by requirement status: gaps first, then drafts, then approved.' },
+  { key: 'manager', label: 'Manager', icon: '\u{1F4CA}', hint: 'Overview sorted by completeness. Chains with the most gaps appear first.' },
 ];
 
 export function ASILAssistantView() {
@@ -66,6 +66,9 @@ export function ASILAssistantView() {
     try {
       const result = await api.getProject(project?.project_id);
       setProject(result);
+      // Also refresh perspective chains and coverage
+      api.getPerspective(perspective).then(setPerspectiveChains).catch(() => {});
+      api.getSafetyCoverage().then(setCoverage).catch(() => {});
     } catch (e) {
       // ignore
     }
@@ -253,6 +256,12 @@ export function ASILAssistantView() {
         </div>
       )}
 
+      {/* Perspective hint */}
+      <div className="asil-perspective-hint">
+        {PERSPECTIVES.find(p => p.key === perspective)?.icon}{' '}
+        {PERSPECTIVES.find(p => p.key === perspective)?.hint}
+      </div>
+
       {error && <div className="asil-error">{error}</div>}
 
       {/* Dashboard or Chain List */}
@@ -280,6 +289,7 @@ export function ASILAssistantView() {
                 chain={chain}
                 selectedLevel={selectedChain === chain.chain_id ? selectedLevel : null}
                 onBlockClick={(level) => handleBlockClick(chain.chain_id, level)}
+                perspective={perspective}
               />
             ))}
             <button className="asil-add-chain-btn" onClick={handleAddChain}>

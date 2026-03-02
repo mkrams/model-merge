@@ -49,12 +49,15 @@ function LevelBar({ label, counts }: { label: string; counts: { filled: number; 
   );
 }
 
-export function PerspectiveDashboard({ coverage }: Props) {
+export function PerspectiveDashboard({ coverage, project }: Props) {
+  // Use project name in the dashboard title
+  const projectName = project?.name || 'Safety Project';
   const covColor = coverage.coverage_pct >= 80 ? '#10b981' : coverage.coverage_pct >= 50 ? '#f59e0b' : '#ef4444';
   const appColor = coverage.approval_pct >= 80 ? '#10b981' : coverage.approval_pct >= 50 ? '#f59e0b' : '#ef4444';
 
   return (
     <div className="asil-dashboard">
+      <h3 style={{ marginBottom: 16, fontSize: 18 }}>{projectName} — Coverage Dashboard</h3>
       {/* Score Rings */}
       <div className="asil-dash-rings">
         <ScoreRing value={coverage.coverage_pct} label="Coverage" color={covColor} />

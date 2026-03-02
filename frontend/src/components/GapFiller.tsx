@@ -10,6 +10,36 @@ const LEVEL_LABELS: Record<string, string> = {
   test_case: 'Test Case',
 };
 
+// Fields per level
+const LEVEL_FIELDS: Record<string, { key: string; label: string; type: 'input' | 'textarea' }[]> = {
+  hazard: [
+    { key: 'name', label: 'Name', type: 'input' },
+    { key: 'description', label: 'Description', type: 'textarea' },
+  ],
+  hazardous_event: [
+    { key: 'name', label: 'Name', type: 'input' },
+    { key: 'description', label: 'Description', type: 'textarea' },
+    { key: 'operating_situation', label: 'Operating Situation', type: 'textarea' },
+  ],
+  safety_goal: [
+    { key: 'name', label: 'Name', type: 'input' },
+    { key: 'description', label: 'Description (shall statement)', type: 'textarea' },
+    { key: 'safe_state', label: 'Safe State', type: 'textarea' },
+  ],
+  fsr: [
+    { key: 'name', label: 'Name', type: 'input' },
+    { key: 'description', label: 'Description (shall statement)', type: 'textarea' },
+    { key: 'testable_criterion', label: 'Testable Criterion', type: 'textarea' },
+  ],
+  test_case: [
+    { key: 'name', label: 'Name', type: 'input' },
+    { key: 'description', label: 'Objective', type: 'textarea' },
+    { key: 'steps', label: 'Test Steps', type: 'textarea' },
+    { key: 'expected_result', label: 'Expected Result', type: 'textarea' },
+    { key: 'pass_criteria', label: 'Pass Criteria', type: 'textarea' },
+  ],
+};
+
 function getItem(chain: SafetyChain, level: ChainLevel): any {
   switch (level) {
     case 'hazard': return chain.hazard;
@@ -32,29 +62,77 @@ interface GapFillerProps {
 export function GapFiller({ chainId, level, chain, onClose, onUpdate }: GapFillerProps) {
   const item = chain ? getItem(chain, level) : null;
   const isGap = !item || item.status === 'gap';
+  const fields = LEVEL_FIELDS[level] || LEVEL_FIELDS.hazard;
 
-  const [draft, setDraft] = useState<DraftResponse | null>(null);
-  const [editName, setEditName] = useState(item?.name || '');
-  const [editText, setEditText] = useState(item?.description || '');
-  const [editSteps, setEditSteps] = useState(item?.steps || '');
-  const [editExpected, setEditExpected] = useState(item?.expected_result || '');
+  // Initialize field values from existing item
+  const initFieldValues = (): Record<string, string> => {
+    const vals: Record<string, string> = {};
+    for (const f of fields) {
+      vals[f.key] = item?.[f.key] || '';
+    }
+    return vals;
+  };
+
+  const [fieldValues, setFieldValues] = useState<Record<string, string>>(initFieldValues);
+  // AI overwrite toggles: which fields should AI overwrite (default: all empty fields)
+  const [aiOverwrite, setAiOverwrite] = useState<Record<string, boolean>>(() => {
+    const ow: Record<string, boolean> = {};
+    for (const f of fields) {
+      ow[f.key] = !(item?.[f.key]); // toggle ON for empty fields, OFF for filled
+    }
+    return ow;
+  });
+
   const [feedback, setFeedback] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [showVersions, setShowVersions] = useState(false);
   const [chatMessages, setChatMessages] = useState<{ role: string; text: string }[]>([]);
+  const [lastRationale, setLastRationale] = useState('');
+
+  const setField = (key: string, value: string) => {
+    setFieldValues(prev => ({ ...prev, [key]: value }));
+  };
+
+  const toggleAiOverwrite = (key: string) => {
+    setAiOverwrite(prev => ({ ...prev, [key]: !prev[key] }));
+  };
+
+  const applyAiResult = (result: DraftResponse) => {
+    // Map AI result keys to field keys
+    const mapping: Record<string, string> = {
+      name: result.name || '',
+      description: result.text || '',
+      operating_situation: (result as any).operating_situation || '',
+      safe_state: (result as any).safe_state || '',
+      testable_criterion: (result as any).testable_criterion || '',
+      steps: result.steps || '',
+      expected_result: result.expected_result || '',
+      pass_criteria: result.pass_criteria || '',
+    };
+
+    setFieldValues(prev => {
+      const next = { ...prev };
+      for (const f of fields) {
+        if (aiOverwrite[f.key] && mapping[f.key]) {
+          next[f.key] = mapping[f.key];
+        }
+      }
+      return next;
+    });
+
+    if (result.rationale) {
+      setLastRationale(result.rationale);
+    }
+    setChatMessages(prev => [...prev, { role: 'assistant', text: result.text || result.name || 'AI suggestion applied' }]);
+  };
 
   const handleGenerate = async () => {
     setLoading(true);
     setError('');
     try {
       const result = await api.draftItem(chainId, level);
-      setDraft(result);
-      setEditName(result.name || editName);
-      setEditText(result.text || '');
-      if (result.steps) setEditSteps(result.steps);
-      if (result.expected_result) setEditExpected(result.expected_result);
-      setChatMessages(prev => [...prev, { role: 'assistant', text: result.text }]);
+      applyAiResult(result);
     } catch (e: any) {
       setError(e?.response?.data?.detail || 'AI generation failed');
     } finally {
@@ -69,12 +147,7 @@ export function GapFiller({ chainId, level, chain, onClose, onUpdate }: GapFille
     setChatMessages(prev => [...prev, { role: 'user', text: feedback }]);
     try {
       const result = await api.reviseItem(chainId, level, feedback);
-      setDraft(result);
-      if (result.name) setEditName(result.name);
-      setEditText(result.text || '');
-      if (result.steps) setEditSteps(result.steps);
-      if (result.expected_result) setEditExpected(result.expected_result);
-      setChatMessages(prev => [...prev, { role: 'assistant', text: result.text }]);
+      applyAiResult(result);
       setFeedback('');
     } catch (e: any) {
       setError(e?.response?.data?.detail || 'Revision failed');
@@ -88,11 +161,12 @@ export function GapFiller({ chainId, level, chain, onClose, onUpdate }: GapFille
     setError('');
     try {
       const extra: Record<string, string> = {};
-      if (level === 'test_case') {
-        extra.steps = editSteps;
-        extra.expected_result = editExpected;
+      for (const f of fields) {
+        if (f.key !== 'name' && f.key !== 'description') {
+          extra[f.key] = fieldValues[f.key] || '';
+        }
       }
-      await api.approveItem(chainId, level, editName, editText, extra);
+      await api.approveItem(chainId, level, fieldValues.name || '', fieldValues.description || '', extra);
       onUpdate();
       onClose();
     } catch (e: any) {
@@ -105,12 +179,15 @@ export function GapFiller({ chainId, level, chain, onClose, onUpdate }: GapFille
   const handleSaveEdit = async () => {
     setLoading(true);
     try {
-      const fields: Record<string, string> = { name: editName, description: editText };
-      if (level === 'test_case') {
-        fields.steps = editSteps;
-        fields.expected_result = editExpected;
+      const saveFields: Record<string, string> = {};
+      for (const f of fields) {
+        if (f.key === 'description') {
+          saveFields.description = fieldValues.description || '';
+        } else {
+          saveFields[f.key] = fieldValues[f.key] || '';
+        }
       }
-      await api.editItem(chainId, level, fields);
+      await api.editItem(chainId, level, saveFields);
       onUpdate();
     } catch (e: any) {
       setError(e?.response?.data?.detail || 'Save failed');
@@ -164,51 +241,54 @@ export function GapFiller({ chainId, level, chain, onClose, onUpdate }: GapFille
         </div>
       )}
 
-      {/* Content Area */}
-      <div className="gap-filler-body">
-        {isGap && !draft && (
-          <div className="gap-filler-empty">
-            <p>This item is empty. Generate an AI suggestion or fill it manually.</p>
-            <button className="btn-primary" onClick={handleGenerate} disabled={loading}>
-              {loading ? 'Generating...' : 'Generate AI Suggestion'}
-            </button>
-          </div>
-        )}
+      {/* AI Generate Bar */}
+      <div className="gap-filler-ai-bar">
+        <button className="btn-ai" onClick={handleGenerate} disabled={loading}>
+          {loading ? 'Generating...' : 'Generate with AI'}
+        </button>
+        <div className="gap-filler-ai-toggles">
+          <span className="gap-filler-ai-toggles-label">Overwrite:</span>
+          {fields.map(f => (
+            <label key={f.key} className="gap-filler-ai-toggle">
+              <input
+                type="checkbox"
+                checked={aiOverwrite[f.key]}
+                onChange={() => toggleAiOverwrite(f.key)}
+              />
+              <span>{f.label.split(' ')[0]}</span>
+            </label>
+          ))}
+        </div>
+      </div>
 
-        {/* Edit fields */}
-        {(!isGap || draft) && (
-          <div className="gap-filler-form">
-            <label>Name</label>
-            <input
-              value={editName}
-              onChange={e => setEditName(e.target.value)}
-              placeholder="Short name..."
-            />
-            <label>Description</label>
-            <textarea
-              value={editText}
-              onChange={e => setEditText(e.target.value)}
-              placeholder="Full text..."
-              rows={5}
-            />
-            {level === 'test_case' && (
-              <>
-                <label>Test Steps</label>
-                <textarea
-                  value={editSteps}
-                  onChange={e => setEditSteps(e.target.value)}
-                  placeholder="1. Step one&#10;2. Step two..."
-                  rows={4}
+      {/* Content Area — always show fields */}
+      <div className="gap-filler-body">
+        <div className="gap-filler-form">
+          {fields.map(f => (
+            <div key={f.key} className="gap-filler-field">
+              <label>{f.label}</label>
+              {f.type === 'input' ? (
+                <input
+                  value={fieldValues[f.key] || ''}
+                  onChange={e => setField(f.key, e.target.value)}
+                  placeholder={`Enter ${f.label.toLowerCase()}...`}
                 />
-                <label>Expected Result</label>
+              ) : (
                 <textarea
-                  value={editExpected}
-                  onChange={e => setEditExpected(e.target.value)}
-                  placeholder="Expected outcome..."
-                  rows={2}
+                  value={fieldValues[f.key] || ''}
+                  onChange={e => setField(f.key, e.target.value)}
+                  placeholder={`Enter ${f.label.toLowerCase()}...`}
+                  rows={f.key === 'description' ? 5 : 3}
                 />
-              </>
-            )}
+              )}
+            </div>
+          ))}
+        </div>
+
+        {/* AI Rationale */}
+        {lastRationale && (
+          <div className="gap-filler-rationale">
+            <strong>AI Rationale:</strong> {lastRationale}
           </div>
         )}
 
@@ -225,31 +305,24 @@ export function GapFiller({ chainId, level, chain, onClose, onUpdate }: GapFille
         )}
 
         {/* Revision Input */}
-        {(!isGap || draft) && (
-          <div className="gap-filler-revise">
-            <input
-              value={feedback}
-              onChange={e => setFeedback(e.target.value)}
-              placeholder="Ask AI to revise... (e.g., 'make it more specific')"
-              onKeyDown={e => e.key === 'Enter' && handleRevise()}
-            />
-            <button onClick={handleRevise} disabled={loading || !feedback.trim()}>
-              {loading ? '...' : 'Revise'}
-            </button>
-            {isGap && (
-              <button onClick={handleGenerate} disabled={loading} className="btn-secondary">
-                Regenerate
-              </button>
-            )}
-          </div>
-        )}
+        <div className="gap-filler-revise">
+          <input
+            value={feedback}
+            onChange={e => setFeedback(e.target.value)}
+            placeholder="Ask AI to revise... (e.g., 'make it more specific')"
+            onKeyDown={e => e.key === 'Enter' && handleRevise()}
+          />
+          <button onClick={handleRevise} disabled={loading || !feedback.trim()}>
+            {loading ? '...' : 'Revise'}
+          </button>
+        </div>
 
         {error && <div className="gap-filler-error">{error}</div>}
       </div>
 
       {/* Action Bar */}
       <div className="gap-filler-actions">
-        <button className="btn-primary" onClick={handleApprove} disabled={loading || (!editName && !editText)}>
+        <button className="btn-primary" onClick={handleApprove} disabled={loading || (!fieldValues.name && !fieldValues.description)}>
           Approve
         </button>
         <button className="btn-secondary" onClick={handleSaveEdit} disabled={loading}>

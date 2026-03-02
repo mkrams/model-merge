@@ -133,20 +133,36 @@ def _get_chain(project: SafetyProject, chain_id: str) -> SafetyChain:
 
 
 def _get_chain_context(chain: SafetyChain) -> dict:
-    """Build context dict for AI prompts."""
+    """Build context dict for AI prompts — includes ALL chain info."""
     ctx = {}
     if chain.hazard and chain.hazard.status != "gap":
         ctx["hazard"] = f"{chain.hazard.name}: {chain.hazard.description}"
     if chain.hazardous_event and chain.hazardous_event.status != "gap":
-        ctx["hazardous_event"] = f"{chain.hazardous_event.name}: {chain.hazardous_event.description}"
+        desc = chain.hazardous_event.description
+        if chain.hazardous_event.operating_situation:
+            desc += f" (Situation: {chain.hazardous_event.operating_situation})"
+        ctx["hazardous_event"] = f"{chain.hazardous_event.name}: {desc}"
     if chain.asil_determination and chain.asil_determination.asil_level:
         ctx["asil_level"] = chain.asil_determination.asil_level
+        if chain.asil_determination.severity:
+            ctx["asil_detail"] = f"S={chain.asil_determination.severity}, E={chain.asil_determination.exposure}, C={chain.asil_determination.controllability}"
     if chain.safety_goal and chain.safety_goal.status != "gap":
-        ctx["safety_goal"] = f"{chain.safety_goal.name}: {chain.safety_goal.description}"
+        desc = chain.safety_goal.description
+        if chain.safety_goal.safe_state:
+            desc += f" (Safe state: {chain.safety_goal.safe_state})"
+        ctx["safety_goal"] = f"{chain.safety_goal.name}: {desc}"
     if chain.fsr and chain.fsr.status != "gap":
-        ctx["fsr"] = f"{chain.fsr.name}: {chain.fsr.description}"
+        desc = chain.fsr.description
+        if chain.fsr.testable_criterion:
+            desc += f" (Testable criterion: {chain.fsr.testable_criterion})"
+        ctx["fsr"] = f"{chain.fsr.name}: {desc}"
     if chain.test_case and chain.test_case.status != "gap":
-        ctx["test_case"] = f"{chain.test_case.name}: {chain.test_case.description}"
+        desc = chain.test_case.description
+        if chain.test_case.steps:
+            desc += f"\nSteps: {chain.test_case.steps}"
+        if chain.test_case.expected_result:
+            desc += f"\nExpected: {chain.test_case.expected_result}"
+        ctx["test_case"] = f"{chain.test_case.name}: {desc}"
     return ctx
 
 
