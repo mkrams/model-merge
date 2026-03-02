@@ -6,6 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from .api.models import router as models_router
 from .api.merge import router as merge_router
+from .api.coverage import router as coverage_router
 from .validation import compiler as compiler_module
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s: %(message)s")
@@ -29,6 +30,7 @@ app.add_middleware(
 
 app.include_router(models_router, prefix="/api")
 app.include_router(merge_router, prefix="/api")
+app.include_router(coverage_router, prefix="/api")
 
 
 @app.get("/api/health")

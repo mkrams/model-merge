@@ -42,6 +42,12 @@ export function Header({ currentStep, activeTool, onToolChange }: HeaderProps) {
           >
             ReqIF Mapping
           </button>
+          <button
+            className={`tool-btn ${activeTool === 'coverage' ? 'active' : ''}`}
+            onClick={() => onToolChange?.('coverage')}
+          >
+            Coverage
+          </button>
         </div>
 
         {/* Step progress (only show when on merge flow) */}

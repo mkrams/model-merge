@@ -70,6 +70,13 @@ export const api = {
     return data;
   },
 
+  async analyzeCoverage(file: File): Promise<CoverageAnalysis> {
+    const form = new FormData();
+    form.append('file', file);
+    const { data } = await client.post('/analysis/coverage/upload', form);
+    return data;
+  },
+
   async analyzeReqifAttributes(fileA: File, fileB: File): Promise<ReqIFMappingAnalysis> {
     const form = new FormData();
     form.append('file_a', fileA);
@@ -129,4 +136,65 @@ export interface ReqIFMappingAnalysis {
     standard_matches: number;
     incompatible_types: number;
   };
+}
+
+/* ── Coverage Analysis Types ── */
+
+export interface CoverageRequirement {
+  id: string;
+  name: string;
+  req_id: string;
+  doc: string;
+  package: string;
+  has_constraints: boolean;
+  has_attributes: boolean;
+  attr_count: number;
+  constraint_count: number;
+  is_orphan: boolean;
+  has_verification: boolean;
+  has_satisfaction: boolean;
+  satisfied_by: string[];
+  verified_by: string[];
+  derived_from: string[];
+  derives_to: string[];
+  other_links: string[];
+  coverage_status: string;
+}
+
+export interface ComplianceCheck {
+  id: string;
+  standard: string;
+  title: string;
+  passed: boolean;
+  detail: string;
+  severity: string;
+}
+
+export interface PackageCoverage {
+  name: string;
+  total_reqs: number;
+  orphan_reqs: number;
+  coverage_pct: number;
+}
+
+export interface CoverageAnalysis {
+  summary: {
+    total_requirements: number;
+    total_elements: number;
+    total_links: number;
+    total_packages: number;
+    forward_coverage: number;
+    orphan_count: number;
+    verified_count: number;
+    satisfied_count: number;
+    fully_traced_count: number;
+    no_constraints_count: number;
+    no_id_count: number;
+    no_doc_count: number;
+  };
+  requirements: CoverageRequirement[];
+  orphan_requirements: CoverageRequirement[];
+  links: { source_id: string; source_name: string; source_type: string; target_ref: string; link_type: string }[];
+  compliance_checks: ComplianceCheck[];
+  package_coverage: PackageCoverage[];
 }

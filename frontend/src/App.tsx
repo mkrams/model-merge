@@ -5,6 +5,7 @@ import { FileUpload } from './components/FileUpload';
 import { MergeView } from './components/MergeView';
 import { ValidationPanel } from './components/ValidationPanel';
 import { ReqIFMappingView } from './components/ReqIFMappingView';
+import { CoverageView } from './components/CoverageView';
 import './App.css';
 
 function App() {
@@ -36,6 +37,7 @@ function App() {
 
         {/* Tool views */}
         {activeTool === 'reqif-mapping' && <ReqIFMappingView />}
+        {activeTool === 'coverage' && <CoverageView />}
 
         {/* Main merge flow */}
         {!activeTool && step === 'upload' && <FileUpload />}
