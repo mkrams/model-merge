@@ -69,4 +69,64 @@ export const api = {
     const { data } = await client.get('/config/status');
     return data;
   },
+
+  async analyzeReqifAttributes(fileA: File, fileB: File): Promise<ReqIFMappingAnalysis> {
+    const form = new FormData();
+    form.append('file_a', fileA);
+    form.append('file_b', fileB);
+    const { data } = await client.post('/merge/reqif/analyze-attributes', form);
+    return data;
+  },
 };
+
+/* ── ReqIF Attribute Mapping Types ── */
+
+export interface ReqIFAttr {
+  id: string;
+  name: string;
+  datatype: string;
+  datatype_kind: string;
+  parent_type: string;
+}
+
+export interface ReqIFMapping {
+  attr_a: ReqIFAttr;
+  attr_b: ReqIFAttr | null;
+  confidence: number;
+  match_reason: string;
+  compatible_types: boolean;
+  status: string;
+}
+
+export interface ReqIFObjectType {
+  id: string;
+  name: string;
+  attributes: ReqIFAttr[];
+}
+
+export interface ReqIFSchemaInfo {
+  tool_name: string;
+  datatypes: { id: string; name: string; kind: string; enum_values: string[] }[];
+  object_types: ReqIFObjectType[];
+  spec_object_count: number;
+  spec_relation_count: number;
+}
+
+export interface ReqIFMappingAnalysis {
+  schema_a: ReqIFSchemaInfo;
+  schema_b: ReqIFSchemaInfo;
+  mappings: ReqIFMapping[];
+  unmapped_a: ReqIFAttr[];
+  unmapped_b: ReqIFAttr[];
+  stats: {
+    total_attrs_a: number;
+    total_attrs_b: number;
+    mapped_count: number;
+    unmapped_a_count: number;
+    unmapped_b_count: number;
+    exact_matches: number;
+    fuzzy_matches: number;
+    standard_matches: number;
+    incompatible_types: number;
+  };
+}

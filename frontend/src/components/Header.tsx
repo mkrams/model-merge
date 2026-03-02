@@ -7,27 +7,59 @@ const steps: { key: AppStep; label: string }[] = [
   { key: 'download', label: '4. Download' },
 ];
 
-export function Header({ currentStep }: { currentStep: AppStep }) {
+interface HeaderProps {
+  currentStep: AppStep;
+  activeTool?: string | null;
+  onToolChange?: (tool: string | null) => void;
+}
+
+export function Header({ currentStep, activeTool, onToolChange }: HeaderProps) {
   return (
     <header className="header">
       <div className="header-left">
-        <h1 className="logo">
+        <h1
+          className="logo"
+          style={{ cursor: 'pointer' }}
+          onClick={() => onToolChange?.(null)}
+        >
           <span className="logo-icon">&#x2B21;</span> ModelMerge
         </h1>
         <span className="tagline">Engineering Model Merge Tool</span>
       </div>
-      <nav className="steps">
-        {steps.map((s, i) => (
-          <div
-            key={s.key}
-            className={`step ${s.key === currentStep ? 'active' : ''} ${
-              steps.findIndex((x) => x.key === currentStep) > i ? 'done' : ''
-            }`}
+
+      <div className="header-right">
+        {/* Tools nav */}
+        <div className="tools-nav">
+          <button
+            className={`tool-btn ${!activeTool ? 'active' : ''}`}
+            onClick={() => onToolChange?.(null)}
           >
-            {s.label}
-          </div>
-        ))}
-      </nav>
+            Merge
+          </button>
+          <button
+            className={`tool-btn ${activeTool === 'reqif-mapping' ? 'active' : ''}`}
+            onClick={() => onToolChange?.('reqif-mapping')}
+          >
+            ReqIF Mapping
+          </button>
+        </div>
+
+        {/* Step progress (only show when on merge flow) */}
+        {!activeTool && (
+          <nav className="steps">
+            {steps.map((s, i) => (
+              <div
+                key={s.key}
+                className={`step ${s.key === currentStep ? 'active' : ''} ${
+                  steps.findIndex((x) => x.key === currentStep) > i ? 'done' : ''
+                }`}
+              >
+                {s.label}
+              </div>
+            ))}
+          </nav>
+        )}
+      </div>
     </header>
   );
 }

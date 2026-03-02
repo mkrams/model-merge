@@ -1,6 +1,7 @@
 """Merge workflow API endpoints."""
 from __future__ import annotations
-from fastapi import APIRouter, HTTPException
+import logging
+from fastapi import APIRouter, HTTPException, UploadFile, File
 from fastapi.responses import PlainTextResponse
 import uuid
 
@@ -12,7 +13,10 @@ from ..merge.detector import analyze_merge
 from ..merge.engine import apply_merge, generate_sysml_v2
 from ..validation.semantic import validate_semantic
 from ..validation.compiler import validate_with_compiler
+from ..parsers.reqif_attributes import extract_schema, analyze_attribute_mapping
 from .models import get_model, store_model
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/merge", tags=["merge"])
 
@@ -126,3 +130,35 @@ async def download(merge_id: str, format: str = "sysmlv2"):
             "Content-Disposition": f"attachment; filename={model.filename}",
         },
     )
+
+
+# ── ReqIF Attribute Mapping ────────────────────────────────────
+
+# Store raw ReqIF text for attribute analysis
+_raw_reqif_texts: dict[str, str] = {}
+
+
+@router.post("/reqif/analyze-attributes")
+async def analyze_reqif_attributes(
+    file_a: UploadFile = File(...),
+    file_b: UploadFile = File(...),
+):
+    """
+    Compare attribute schemas of two ReqIF files.
+    Returns suggested mappings, unmapped attributes, and compatibility info.
+    """
+    try:
+        text_a = (await file_a.read()).decode("utf-8")
+        text_b = (await file_b.read()).decode("utf-8")
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Failed to read files: {str(e)}")
+
+    try:
+        schema_a = extract_schema(text_a, file_a.filename or "file_a.reqif")
+        schema_b = extract_schema(text_b, file_b.filename or "file_b.reqif")
+    except Exception as e:
+        logger.error(f"ReqIF schema extraction failed: {e}", exc_info=True)
+        raise HTTPException(status_code=400, detail=f"Failed to parse ReqIF: {str(e)}")
+
+    analysis = analyze_attribute_mapping(schema_a, schema_b)
+    return analysis
