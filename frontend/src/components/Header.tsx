@@ -43,10 +43,10 @@ export function Header({ currentStep, activeTool, onToolChange }: HeaderProps) {
             ReqIF Mapping
           </button>
           <button
-            className={`tool-btn ${activeTool === 'coverage' ? 'active' : ''}`}
-            onClick={() => onToolChange?.('coverage')}
+            className={`tool-btn ${activeTool === 'asil-assistant' ? 'active' : ''}`}
+            onClick={() => onToolChange?.('asil-assistant')}
           >
-            Coverage
+            ASIL Assistant
           </button>
         </div>
 

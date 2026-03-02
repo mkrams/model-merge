@@ -6,6 +6,7 @@ import { MergeView } from './components/MergeView';
 import { ValidationPanel } from './components/ValidationPanel';
 import { ReqIFMappingView } from './components/ReqIFMappingView';
 import { CoverageView } from './components/CoverageView';
+import { ASILAssistantView } from './components/ASILAssistantView';
 import './App.css';
 
 function App() {
@@ -38,6 +39,7 @@ function App() {
         {/* Tool views */}
         {activeTool === 'reqif-mapping' && <ReqIFMappingView />}
         {activeTool === 'coverage' && <CoverageView />}
+        {activeTool === 'asil-assistant' && <ASILAssistantView />}
 
         {/* Main merge flow */}
         {!activeTool && step === 'upload' && <FileUpload />}

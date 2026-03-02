@@ -1,20 +1,25 @@
 """ModelMerge API — FastAPI application."""
 import os
+import json
 import logging
+from pathlib import Path
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from .api.models import router as models_router
 from .api.merge import router as merge_router
 from .api.coverage import router as coverage_router
+from .api.asil import router as asil_router
 from .validation import compiler as compiler_module
+from .safety import ai_assistant as ai_module
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s: %(message)s")
+logger = logging.getLogger(__name__)
 
 app = FastAPI(
     title="ModelMerge API",
     description="Engineering model merge tool for SysML v2 and ReqIF",
-    version="0.1.0",
+    version="0.2.0",
 )
 
 # Allow the Vercel frontend + localhost for dev
@@ -31,6 +36,26 @@ app.add_middleware(
 app.include_router(models_router, prefix="/api")
 app.include_router(merge_router, prefix="/api")
 app.include_router(coverage_router, prefix="/api")
+app.include_router(asil_router, prefix="/api")
+
+# ── API Key Persistence ──────────────────────────────────────────
+DATA_DIR = Path(os.environ.get("MODELMERGE_DATA_DIR", "/tmp/modelmerge_data"))
+DATA_DIR.mkdir(parents=True, exist_ok=True)
+API_KEY_FILE = DATA_DIR / "api_key.txt"
+
+
+def _load_persisted_api_key():
+    """Load API key from disk on startup."""
+    if API_KEY_FILE.exists():
+        key = API_KEY_FILE.read_text().strip()
+        if key:
+            compiler_module.ANTHROPIC_API_KEY = key
+            ai_module.ANTHROPIC_API_KEY = key
+            logger.info("Loaded persisted API key from disk")
+
+
+# Load on startup
+_load_persisted_api_key()
 
 
 @app.get("/api/health")
@@ -49,8 +74,15 @@ class ApiKeyRequest(BaseModel):
 
 @app.post("/api/config/api-key")
 async def set_api_key(req: ApiKeyRequest):
-    """Set the Anthropic API key at runtime (stored in memory only)."""
+    """Set the Anthropic API key at runtime and persist to disk."""
     compiler_module.ANTHROPIC_API_KEY = req.api_key
+    ai_module.ANTHROPIC_API_KEY = req.api_key
+    # Persist to disk so it survives refreshes / restarts
+    try:
+        API_KEY_FILE.write_text(req.api_key)
+        logger.info("API key persisted to disk")
+    except Exception as e:
+        logger.warning(f"Failed to persist API key: {e}")
     return {"status": "ok", "ai_validation": True}
 
 

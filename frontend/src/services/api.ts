@@ -1,5 +1,9 @@
 import axios from 'axios';
 import type { ParsedModel, MergeAnalysis, MergedResult, ValidationResponse } from '../types';
+import type {
+  SafetyProject, SafetyChain, DraftResponse, Gap,
+  CoverageMetrics, ASILDefinitions, Perspective,
+} from '../types/safety';
 
 // In production, VITE_API_URL points to the Railway backend.
 // In dev, the Vite proxy forwards /api to localhost:8000.
@@ -82,6 +86,97 @@ export const api = {
     form.append('file_a', fileA);
     form.append('file_b', fileB);
     const { data } = await client.post('/merge/reqif/analyze-attributes', form);
+    return data;
+  },
+
+  // ── ASIL Assistant API ──
+
+  async importSafetyChain(file: File): Promise<SafetyProject> {
+    const form = new FormData();
+    form.append('file', file);
+    const { data } = await client.post('/asil/import', form);
+    return data;
+  },
+
+  async getProject(projectId?: string): Promise<SafetyProject> {
+    const { data } = await client.get('/asil/project', { params: { project_id: projectId || '' } });
+    return data;
+  },
+
+  async addChain(): Promise<SafetyChain> {
+    const { data } = await client.post('/asil/chain/add');
+    return data;
+  },
+
+  async draftItem(chainId: string, level: string, feedback?: string): Promise<DraftResponse> {
+    const { data } = await client.post('/asil/draft', { chain_id: chainId, level, feedback: feedback || '' });
+    return data;
+  },
+
+  async reviseItem(chainId: string, level: string, instruction: string): Promise<DraftResponse> {
+    const { data } = await client.post('/asil/revise', { chain_id: chainId, level, instruction });
+    return data;
+  },
+
+  async approveItem(chainId: string, level: string, name: string, text: string, extra?: Record<string, string>): Promise<{ status: string }> {
+    const { data } = await client.post('/asil/approve', { chain_id: chainId, level, name, text, ...extra });
+    return data;
+  },
+
+  async revertItem(chainId: string, level: string, versionIdx: number): Promise<{ status: string }> {
+    const { data } = await client.post('/asil/revert', { chain_id: chainId, level, version_idx: versionIdx });
+    return data;
+  },
+
+  async editItem(chainId: string, level: string, fields: Record<string, string>): Promise<{ status: string }> {
+    const { data } = await client.put('/asil/item', { chain_id: chainId, level, ...fields });
+    return data;
+  },
+
+  async getGaps(): Promise<Gap[]> {
+    const { data } = await client.get('/asil/gaps');
+    return data;
+  },
+
+  async getSafetyCoverage(): Promise<CoverageMetrics> {
+    const { data } = await client.get('/asil/coverage');
+    return data;
+  },
+
+  async getPerspective(role: Perspective): Promise<SafetyChain[]> {
+    const { data } = await client.get(`/asil/perspective/${role}`);
+    return data;
+  },
+
+  async determineASIL(chainId: string, severity?: string, exposure?: string, controllability?: string): Promise<any> {
+    const { data } = await client.post('/asil/asil-determine', {
+      chain_id: chainId, severity: severity || '', exposure: exposure || '', controllability: controllability || '',
+    });
+    return data;
+  },
+
+  async approveASIL(chainId: string): Promise<any> {
+    const { data } = await client.post('/asil/asil-determine/approve', { chain_id: chainId });
+    return data;
+  },
+
+  async exportReqIF(): Promise<string> {
+    const { data } = await client.post('/asil/export/reqif', {}, { responseType: 'text' });
+    return data;
+  },
+
+  async getASILDefinitions(): Promise<ASILDefinitions> {
+    const { data } = await client.get('/asil/definitions');
+    return data;
+  },
+
+  async saveData(username: string, password: string): Promise<{ status: string }> {
+    const { data } = await client.post('/asil/save', { username, password });
+    return data;
+  },
+
+  async loadData(username: string, password: string): Promise<{ projects: any[]; count: number }> {
+    const { data } = await client.post('/asil/load', { username, password });
     return data;
   },
 };
