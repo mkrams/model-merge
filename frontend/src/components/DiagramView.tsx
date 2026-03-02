@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react';
 import * as d3 from 'd3';
-import type { PackageData, Element } from '../types';
+import type { PackageData } from '../types';
 
 interface DiagramNode {
   id: string;
@@ -138,10 +138,12 @@ export function DiagramView({ packages }: { packages: PackageData[] }) {
     // Calculate bounds and center
     let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
     root.each((d) => {
-      if (d.x < minX) minX = d.x;
-      if (d.x > maxX) maxX = d.x;
-      if (d.y < minY) minY = d.y;
-      if (d.y > maxY) maxY = d.y;
+      const dx = d.x ?? 0;
+      const dy = d.y ?? 0;
+      if (dx < minX) minX = dx;
+      if (dx > maxX) maxX = dx;
+      if (dy < minY) minY = dy;
+      if (dy > maxY) maxY = dy;
     });
 
     const width = maxX - minX + 300;
@@ -155,10 +157,14 @@ export function DiagramView({ packages }: { packages: PackageData[] }) {
       .append('path')
       .attr('class', 'diagram-link')
       .attr('d', (d) => {
-        return `M${d.source.x},${d.source.y + 20}
-                C${d.source.x},${(d.source.y + d.target.y) / 2}
-                 ${d.target.x},${(d.source.y + d.target.y) / 2}
-                 ${d.target.x},${d.target.y - 16}`;
+        const sx = d.source.x ?? 0;
+        const sy = d.source.y ?? 0;
+        const tx = d.target.x ?? 0;
+        const ty = d.target.y ?? 0;
+        return `M${sx},${sy + 20}
+                C${sx},${(sy + ty) / 2}
+                 ${tx},${(sy + ty) / 2}
+                 ${tx},${ty - 16}`;
       })
       .attr('fill', 'none')
       .attr('stroke', '#475569')

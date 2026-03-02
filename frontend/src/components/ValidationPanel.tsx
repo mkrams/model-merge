@@ -65,7 +65,6 @@ export function ValidationPanel() {
     validation,
     setValidation,
     setStep,
-    setLoading,
     setError,
   } = useAppStore();
 
