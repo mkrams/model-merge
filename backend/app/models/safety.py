@@ -1,15 +1,212 @@
-"""ISO 26262 Safety Chain data model with version history."""
+"""ISO 26262 graph-based traceability model with many-to-many relationships."""
 from __future__ import annotations
 from dataclasses import dataclass, field
-from datetime import datetime
 from typing import Optional
+from enum import Enum
 import uuid
+from datetime import datetime
 
 
-# ── ASIL Lookup Matrix (ISO 26262 Part 3, Table 4) ──────────────
+class ItemType(str, Enum):
+    """Item types in the safety traceability hierarchy."""
+    HAZARD = "hazard"
+    HAZARDOUS_EVENT = "hazardous_event"
+    SAFETY_GOAL = "safety_goal"
+    FSR = "fsr"
+    TSR = "tsr"
+    VERIFICATION = "verification"
 
-ASIL_MATRIX: dict[tuple[str, str, str], str] = {
-    # (Severity, Exposure, Controllability) → ASIL
+
+class VerificationMethod(str, Enum):
+    """Verification method types."""
+    TEST = "test"
+    ANALYSIS = "analysis"
+    REVIEW = "review"
+
+
+class LinkType(str, Enum):
+    """Types of links in the traceability graph."""
+    HAZARD_TO_EVENT = "hazard_to_event"
+    EVENT_TO_GOAL = "event_to_goal"
+    GOAL_TO_FSR = "goal_to_fsr"
+    FSR_TO_TSR = "fsr_to_tsr"
+    TSR_TO_VERIFICATION = "tsr_to_verification"
+    FSR_TO_VERIFICATION = "fsr_to_verification"
+
+
+# Valid link types between item types
+VALID_LINKS: dict[tuple[str, str], LinkType] = {
+    ("hazard", "hazardous_event"): LinkType.HAZARD_TO_EVENT,
+    ("hazardous_event", "safety_goal"): LinkType.EVENT_TO_GOAL,
+    ("safety_goal", "fsr"): LinkType.GOAL_TO_FSR,
+    ("fsr", "tsr"): LinkType.FSR_TO_TSR,
+    ("tsr", "verification"): LinkType.TSR_TO_VERIFICATION,
+    ("fsr", "verification"): LinkType.FSR_TO_VERIFICATION,
+}
+
+
+@dataclass
+class ItemVersion:
+    """Snapshot of an item at a point in time."""
+    version: int
+    text: str
+    author: str = "user"
+    timestamp: str = ""
+    fields: dict = field(default_factory=dict)
+
+    def __post_init__(self):
+        if not self.timestamp:
+            self.timestamp = datetime.utcnow().isoformat()
+
+    def to_dict(self) -> dict:
+        return {
+            "version": self.version,
+            "text": self.text,
+            "author": self.author,
+            "timestamp": self.timestamp,
+            "fields": self.fields,
+        }
+
+
+@dataclass
+class SafetyItem:
+    """Universal item in the traceability graph.
+
+    Type-specific attributes are stored in the attributes dict:
+    - hazardous_event: severity, exposure, controllability, asil_level, operating_situation
+    - safety_goal: safe_state
+    - fsr: testable_criterion
+    - tsr: allocated_to, testable_criterion
+    - verification: method (test/analysis/review), steps, expected_result, pass_criteria
+    """
+    item_id: str = ""
+    item_type: ItemType = ItemType.HAZARD
+    name: str = ""
+    description: str = ""
+    status: str = "gap"
+    versions: list = field(default_factory=list)
+    attributes: dict = field(default_factory=dict)
+
+    def __post_init__(self):
+        if not self.item_id:
+            self.item_id = f"{self.item_type.value}-{uuid.uuid4().hex[:8]}"
+        # Ensure attributes is a dict
+        if not isinstance(self.attributes, dict):
+            self.attributes = {}
+
+    def to_dict(self) -> dict:
+        return {
+            "item_id": self.item_id,
+            "item_type": self.item_type.value if isinstance(self.item_type, ItemType) else self.item_type,
+            "name": self.name,
+            "description": self.description,
+            "status": self.status,
+            "attributes": self.attributes,
+            "versions": [v.to_dict() for v in self.versions],
+        }
+
+
+@dataclass
+class TraceLink:
+    """A directed link between two items in the traceability graph."""
+    link_id: str = ""
+    source_id: str = ""
+    target_id: str = ""
+    link_type: LinkType = LinkType.HAZARD_TO_EVENT
+    rationale: str = ""
+
+    def __post_init__(self):
+        if not self.link_id:
+            self.link_id = f"link-{uuid.uuid4().hex[:8]}"
+
+    def to_dict(self) -> dict:
+        return {
+            "link_id": self.link_id,
+            "source_id": self.source_id,
+            "target_id": self.target_id,
+            "link_type": self.link_type.value if isinstance(self.link_type, LinkType) else self.link_type,
+            "rationale": self.rationale,
+        }
+
+
+@dataclass
+class SafetyProject:
+    """Top-level container: items + links form the traceability graph."""
+    project_id: str = ""
+    name: str = ""
+    items: list = field(default_factory=list)
+    links: list = field(default_factory=list)
+    created_at: str = ""
+
+    def __post_init__(self):
+        if not self.project_id:
+            self.project_id = f"proj-{uuid.uuid4().hex[:8]}"
+        if not self.created_at:
+            self.created_at = datetime.utcnow().isoformat()
+
+    def get_item(self, item_id: str) -> Optional[SafetyItem]:
+        """Get an item by ID."""
+        for item in self.items:
+            if item.item_id == item_id:
+                return item
+        return None
+
+    def get_items_by_type(self, item_type: ItemType) -> list:
+        """Get all items of a specific type."""
+        type_str = item_type.value if isinstance(item_type, ItemType) else item_type
+        return [i for i in self.items if (i.item_type.value if isinstance(i.item_type, ItemType) else i.item_type) == type_str]
+
+    def get_children(self, item_id: str) -> list:
+        """Get all items that this item links TO (downstream)."""
+        child_ids = [l.target_id for l in self.links if l.source_id == item_id]
+        return [i for i in self.items if i.item_id in child_ids]
+
+    def get_parents(self, item_id: str) -> list:
+        """Get all items that link TO this item (upstream)."""
+        parent_ids = [l.source_id for l in self.links if l.target_id == item_id]
+        return [i for i in self.items if i.item_id in parent_ids]
+
+    def get_links_from(self, item_id: str) -> list:
+        """Get all links originating from an item."""
+        return [l for l in self.links if l.source_id == item_id]
+
+    def get_links_to(self, item_id: str) -> list:
+        """Get all links targeting an item."""
+        return [l for l in self.links if l.target_id == item_id]
+
+    def add_item(self, item: SafetyItem) -> SafetyItem:
+        """Add an item to the project."""
+        self.items.append(item)
+        return item
+
+    def add_link(self, source_id: str, target_id: str, link_type: LinkType, rationale: str = "") -> TraceLink:
+        """Add a link between two items."""
+        link = TraceLink(source_id=source_id, target_id=target_id, link_type=link_type, rationale=rationale)
+        self.links.append(link)
+        return link
+
+    def remove_link(self, link_id: str):
+        """Remove a link by ID."""
+        self.links = [l for l in self.links if l.link_id != link_id]
+
+    def remove_item(self, item_id: str):
+        """Remove an item and all its associated links."""
+        self.items = [i for i in self.items if i.item_id != item_id]
+        self.links = [l for l in self.links if l.source_id != item_id and l.target_id != item_id]
+
+    def to_dict(self) -> dict:
+        """Convert project to dictionary."""
+        return {
+            "project_id": self.project_id,
+            "name": self.name,
+            "items": [i.to_dict() for i in self.items],
+            "links": [l.to_dict() for l in self.links],
+            "created_at": self.created_at,
+        }
+
+
+# ASIL lookup matrix per ISO 26262 Part 3, Table 4
+ASIL_MATRIX = {
     ("S1", "E1", "C1"): "QM", ("S1", "E1", "C2"): "QM", ("S1", "E1", "C3"): "QM",
     ("S1", "E2", "C1"): "QM", ("S1", "E2", "C2"): "QM", ("S1", "E2", "C3"): "QM",
     ("S1", "E3", "C1"): "QM", ("S1", "E3", "C2"): "QM", ("S1", "E3", "C3"): "A",
@@ -26,12 +223,13 @@ ASIL_MATRIX: dict[tuple[str, str, str], str] = {
     ("S3", "E4", "C1"): "B",  ("S3", "E4", "C2"): "C",  ("S3", "E4", "C3"): "D",
 }
 
-# S0 always → QM, E0 always → QM, C0 always → QM
+
 def compute_asil(severity: str, exposure: str, controllability: str) -> str:
     """Compute ASIL level from S/E/C ratings per ISO 26262."""
     if severity == "S0" or exposure == "E0" or controllability == "C0":
         return "QM"
-    return ASIL_MATRIX.get((severity, exposure, controllability), "QM")
+    key = (severity.upper(), exposure.upper(), controllability.upper())
+    return ASIL_MATRIX.get(key, "QM")
 
 
 ASIL_COLORS = {"QM": "#94a3b8", "A": "#3b82f6", "B": "#f59e0b", "C": "#f97316", "D": "#ef4444"}
@@ -42,6 +240,7 @@ SEVERITY_DEFS = {
     "S2": "Severe and life-threatening injuries (survival probable)",
     "S3": "Life-threatening injuries (survival uncertain), fatal injuries",
 }
+
 EXPOSURE_DEFS = {
     "E0": "Incredibly unlikely",
     "E1": "Very low probability (< 1% operating time)",
@@ -49,326 +248,10 @@ EXPOSURE_DEFS = {
     "E3": "Medium probability (10–50% operating time)",
     "E4": "High probability (> 50% operating time)",
 }
+
 CONTROLLABILITY_DEFS = {
     "C0": "Controllable in general",
     "C1": "Simply controllable (> 99% of drivers)",
     "C2": "Normally controllable (> 90% of drivers)",
     "C3": "Difficult to control or uncontrollable (< 90% of drivers)",
 }
-
-
-# ── Version Tracking ─────────────────────────────────────────────
-
-@dataclass
-class ItemVersion:
-    """Snapshot of an item's text at a point in time."""
-    version: int
-    text: str
-    name: str
-    author: str = "user"  # "user" or "ai"
-    timestamp: str = ""
-    rationale: str = ""
-
-    def __post_init__(self):
-        if not self.timestamp:
-            self.timestamp = datetime.utcnow().isoformat()
-
-    def to_dict(self) -> dict:
-        return {
-            "version": self.version,
-            "text": self.text,
-            "name": self.name,
-            "author": self.author,
-            "timestamp": self.timestamp,
-            "rationale": self.rationale,
-        }
-
-
-# ── Chain Items ──────────────────────────────────────────────────
-
-@dataclass
-class ASILDetermination:
-    severity: str = ""       # S0–S3
-    severity_rationale: str = ""
-    exposure: str = ""       # E0–E4
-    exposure_rationale: str = ""
-    controllability: str = ""  # C0–C3
-    controllability_rationale: str = ""
-    asil_level: str = ""     # QM, A, B, C, D
-    approved: bool = False
-
-    def compute(self) -> str:
-        if self.severity and self.exposure and self.controllability:
-            self.asil_level = compute_asil(self.severity, self.exposure, self.controllability)
-        return self.asil_level
-
-    def to_dict(self) -> dict:
-        return {
-            "severity": self.severity,
-            "severity_rationale": self.severity_rationale,
-            "exposure": self.exposure,
-            "exposure_rationale": self.exposure_rationale,
-            "controllability": self.controllability,
-            "controllability_rationale": self.controllability_rationale,
-            "asil_level": self.asil_level,
-            "approved": self.approved,
-        }
-
-
-@dataclass
-class Hazard:
-    id: str = ""
-    name: str = ""
-    description: str = ""
-    failure_mode_ids: list[str] = field(default_factory=list)
-    status: str = "gap"  # gap, draft, approved
-    approved: bool = False
-    versions: list[ItemVersion] = field(default_factory=list)
-
-    def __post_init__(self):
-        if not self.id:
-            self.id = f"HAZ-{uuid.uuid4().hex[:6].upper()}"
-
-    def to_dict(self) -> dict:
-        return {
-            "id": self.id, "name": self.name, "description": self.description,
-            "failure_mode_ids": self.failure_mode_ids,
-            "status": self.status, "approved": self.approved,
-            "versions": [v.to_dict() for v in self.versions],
-        }
-
-
-@dataclass
-class HazardousEvent:
-    id: str = ""
-    hazard_id: str = ""
-    name: str = ""
-    description: str = ""
-    operating_situation: str = ""
-    status: str = "gap"
-    approved: bool = False
-    versions: list[ItemVersion] = field(default_factory=list)
-
-    def __post_init__(self):
-        if not self.id:
-            self.id = f"HE-{uuid.uuid4().hex[:6].upper()}"
-
-    def to_dict(self) -> dict:
-        return {
-            "id": self.id, "hazard_id": self.hazard_id,
-            "name": self.name, "description": self.description,
-            "operating_situation": self.operating_situation,
-            "status": self.status, "approved": self.approved,
-            "versions": [v.to_dict() for v in self.versions],
-        }
-
-
-@dataclass
-class SafetyGoal:
-    id: str = ""
-    hazard_id: str = ""
-    name: str = ""
-    description: str = ""
-    asil_level: str = ""
-    safe_state: str = ""
-    status: str = "gap"
-    approved: bool = False
-    versions: list[ItemVersion] = field(default_factory=list)
-
-    def __post_init__(self):
-        if not self.id:
-            self.id = f"SG-{uuid.uuid4().hex[:6].upper()}"
-
-    def to_dict(self) -> dict:
-        return {
-            "id": self.id, "hazard_id": self.hazard_id,
-            "name": self.name, "description": self.description,
-            "asil_level": self.asil_level, "safe_state": self.safe_state,
-            "status": self.status, "approved": self.approved,
-            "versions": [v.to_dict() for v in self.versions],
-        }
-
-
-@dataclass
-class FSR:
-    """Functional Safety Requirement."""
-    id: str = ""
-    safety_goal_id: str = ""
-    name: str = ""
-    description: str = ""
-    testable_criterion: str = ""
-    asil_level: str = ""
-    status: str = "gap"   # gap, draft, review, approved
-    approved: bool = False
-    versions: list[ItemVersion] = field(default_factory=list)
-
-    def __post_init__(self):
-        if not self.id:
-            self.id = f"FSR-{uuid.uuid4().hex[:6].upper()}"
-
-    def to_dict(self) -> dict:
-        return {
-            "id": self.id, "safety_goal_id": self.safety_goal_id,
-            "name": self.name, "description": self.description,
-            "testable_criterion": self.testable_criterion,
-            "asil_level": self.asil_level,
-            "status": self.status, "approved": self.approved,
-            "versions": [v.to_dict() for v in self.versions],
-        }
-
-
-@dataclass
-class TestCase:
-    id: str = ""
-    fsr_id: str = ""
-    name: str = ""
-    description: str = ""
-    steps: str = ""
-    expected_result: str = ""
-    pass_criteria: str = ""
-    status: str = "gap"
-    approved: bool = False
-    versions: list[ItemVersion] = field(default_factory=list)
-
-    def __post_init__(self):
-        if not self.id:
-            self.id = f"TC-{uuid.uuid4().hex[:6].upper()}"
-
-    def to_dict(self) -> dict:
-        return {
-            "id": self.id, "fsr_id": self.fsr_id,
-            "name": self.name, "description": self.description,
-            "steps": self.steps, "expected_result": self.expected_result,
-            "pass_criteria": self.pass_criteria,
-            "status": self.status, "approved": self.approved,
-            "versions": [v.to_dict() for v in self.versions],
-        }
-
-
-@dataclass
-class FailureMode:
-    """Lighter FMEA: just connects failure modes to hazards."""
-    id: str = ""
-    name: str = ""
-    description: str = ""
-    hazard_ids: list[str] = field(default_factory=list)
-
-    def __post_init__(self):
-        if not self.id:
-            self.id = f"FM-{uuid.uuid4().hex[:6].upper()}"
-
-    def to_dict(self) -> dict:
-        return {
-            "id": self.id, "name": self.name, "description": self.description,
-            "hazard_ids": self.hazard_ids,
-        }
-
-
-# ── Safety Chain (one traced path) ──────────────────────────────
-
-@dataclass
-class SafetyChain:
-    """One full trace: Hazard → HazardousEvent → ASIL → SafetyGoal → FSR → TestCase."""
-    chain_id: str = ""
-    hazard: Optional[Hazard] = None
-    hazardous_event: Optional[HazardousEvent] = None
-    asil_determination: Optional[ASILDetermination] = None
-    safety_goal: Optional[SafetyGoal] = None
-    fsr: Optional[FSR] = None
-    test_case: Optional[TestCase] = None
-
-    def __post_init__(self):
-        if not self.chain_id:
-            self.chain_id = f"CHAIN-{uuid.uuid4().hex[:6].upper()}"
-
-    @property
-    def gap_count(self) -> int:
-        count = 0
-        for item in [self.hazard, self.hazardous_event, self.safety_goal, self.fsr, self.test_case]:
-            if item is None or item.status == "gap":
-                count += 1
-        if self.asil_determination is None or not self.asil_determination.asil_level:
-            count += 1
-        return count
-
-    @property
-    def is_complete(self) -> bool:
-        return self.gap_count == 0
-
-    @property
-    def approval_count(self) -> int:
-        count = 0
-        for item in [self.hazard, self.hazardous_event, self.safety_goal, self.fsr, self.test_case]:
-            if item and item.approved:
-                count += 1
-        if self.asil_determination and self.asil_determination.approved:
-            count += 1
-        return count
-
-    def to_dict(self) -> dict:
-        return {
-            "chain_id": self.chain_id,
-            "hazard": self.hazard.to_dict() if self.hazard else None,
-            "hazardous_event": self.hazardous_event.to_dict() if self.hazardous_event else None,
-            "asil_determination": self.asil_determination.to_dict() if self.asil_determination else None,
-            "safety_goal": self.safety_goal.to_dict() if self.safety_goal else None,
-            "fsr": self.fsr.to_dict() if self.fsr else None,
-            "test_case": self.test_case.to_dict() if self.test_case else None,
-            "gap_count": self.gap_count,
-            "is_complete": self.is_complete,
-            "approval_count": self.approval_count,
-        }
-
-
-# ── Safety Project (top-level container) ────────────────────────
-
-@dataclass
-class SafetyProject:
-    project_id: str = ""
-    name: str = ""
-    source_filename: str = ""
-    chains: list[SafetyChain] = field(default_factory=list)
-    failure_modes: list[FailureMode] = field(default_factory=list)
-    # Draft conversation histories: {f"{chain_id}:{level}": [{role, text}]}
-    draft_histories: dict = field(default_factory=dict)
-    created_at: str = ""
-
-    def __post_init__(self):
-        if not self.project_id:
-            self.project_id = f"PROJ-{uuid.uuid4().hex[:6].upper()}"
-        if not self.created_at:
-            self.created_at = datetime.utcnow().isoformat()
-
-    @property
-    def total_chains(self) -> int:
-        return len(self.chains)
-
-    @property
-    def complete_chains(self) -> int:
-        return sum(1 for c in self.chains if c.is_complete)
-
-    @property
-    def total_gaps(self) -> int:
-        return sum(c.gap_count for c in self.chains)
-
-    @property
-    def coverage_pct(self) -> float:
-        total_items = self.total_chains * 6  # 6 levels per chain
-        if total_items == 0:
-            return 0.0
-        filled = total_items - self.total_gaps
-        return round((filled / total_items) * 100, 1)
-
-    def to_dict(self) -> dict:
-        return {
-            "project_id": self.project_id,
-            "name": self.name,
-            "source_filename": self.source_filename,
-            "chains": [c.to_dict() for c in self.chains],
-            "failure_modes": [fm.to_dict() for fm in self.failure_modes],
-            "total_chains": self.total_chains,
-            "complete_chains": self.complete_chains,
-            "total_gaps": self.total_gaps,
-            "coverage_pct": self.coverage_pct,
-            "created_at": self.created_at,
-        }

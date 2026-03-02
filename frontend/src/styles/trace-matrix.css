@@ -1,0 +1,191 @@
+.trace-matrix-view {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: var(--surface-1);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+}
+
+.trace-matrix-header {
+  padding: 16px;
+  background: var(--surface-2);
+  border-bottom: 1px solid var(--line);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+}
+
+.trace-matrix-controls {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.trace-matrix-select {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.trace-matrix-select label {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-3);
+}
+
+.trace-matrix-select select {
+  padding: 6px 10px;
+  border: 1px solid var(--line-strong);
+  border-radius: 4px;
+  font-size: 13px;
+  background: var(--surface-1);
+  color: var(--text-1);
+  cursor: pointer;
+}
+
+.trace-matrix-select select:hover {
+  border-color: var(--text-3);
+}
+
+.trace-matrix-stats {
+  font-size: 13px;
+  color: var(--text-2);
+}
+
+.trace-matrix-loading {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-3);
+}
+
+.trace-matrix-container {
+  flex: 1;
+  overflow: auto;
+  padding: 12px;
+}
+
+.trace-matrix-table {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 0;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  overflow: hidden;
+  background: var(--surface-1);
+}
+
+.trace-matrix-row {
+  display: flex;
+  flex-direction: row;
+  gap: 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.trace-matrix-row:last-child {
+  border-bottom: none;
+}
+
+.trace-matrix-row.hovered .trace-matrix-row-header {
+  background-color: var(--surface-2);
+}
+
+.trace-matrix-header-row {
+  background: var(--surface-2);
+  border-bottom: 2px solid var(--line-strong);
+  font-weight: 600;
+}
+
+.trace-matrix-header-row .trace-matrix-row-header {
+  background: var(--surface-2);
+}
+
+.trace-matrix-row-header {
+  min-width: 150px;
+  padding: 8px 12px;
+  background: var(--surface-1);
+  border-right: 1px solid var(--line);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--text-2);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.trace-matrix-cell {
+  min-width: 50px;
+  min-height: 40px;
+  padding: 6px;
+  border-right: 1px solid var(--line);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--surface-1);
+  cursor: pointer;
+  transition: background-color 0.15s;
+}
+
+.trace-matrix-cell:last-child {
+  border-right: none;
+}
+
+.trace-matrix-cell:hover {
+  background-color: var(--surface-2);
+}
+
+.trace-matrix-header-cell {
+  background: var(--surface-2);
+  border-right: 1px solid var(--line-strong);
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px;
+  font-size: 11px;
+  color: var(--text-2);
+  font-weight: 500;
+  cursor: default;
+}
+
+.trace-matrix-header-cell.hovered {
+  background: rgba(59, 130, 246, 0.15);
+}
+
+.trace-matrix-header-cell:last-child {
+  border-right: none;
+}
+
+.trace-matrix-data-cell {
+  border: none;
+  padding: 8px;
+}
+
+.trace-matrix-data-cell.linked {
+  background-color: rgba(59, 130, 246, 0.15);
+}
+
+.trace-matrix-data-cell.loading {
+  opacity: 0.6;
+  cursor: wait;
+}
+
+.trace-matrix-status-dot {
+  flex-shrink: 0;
+}
+
+.trace-matrix-link-dot {
+  flex-shrink: 0;
+}
+
+.trace-matrix-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  color: var(--text-3);
+  font-size: 14px;
+}

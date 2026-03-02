@@ -1,7 +1,16 @@
-import type { SafetyProject, CoverageMetrics } from '../types/safety';
+import type { SafetyProject, CoverageMetrics, ItemType } from '../types/safety';
 
 const ASIL_COLORS: Record<string, string> = {
   QM: '#94a3b8', A: '#3b82f6', B: '#f59e0b', C: '#f97316', D: '#ef4444',
+};
+
+const TYPE_LABELS: Record<string, string> = {
+  hazard: 'Hazards',
+  hazardous_event: 'Haz. Events',
+  safety_goal: 'Safety Goals',
+  fsr: 'FSRs',
+  tsr: 'TSRs',
+  verification: 'Verification',
 };
 
 interface Props {
@@ -29,8 +38,8 @@ function ScoreRing({ value, label, color }: { value: number; label: string; colo
   );
 }
 
-function LevelBar({ label, counts }: { label: string; counts: { filled: number; approved: number; draft: number; gap: number } }) {
-  const total = counts.filled + counts.gap;
+function LevelBar({ label, counts }: { label: string; counts: { total: number; approved: number; draft: number; gap: number } }) {
+  const total = counts.total;
   if (total === 0) return null;
   const approvedPct = (counts.approved / total) * 100;
   const draftPct = (counts.draft / total) * 100;
@@ -50,10 +59,27 @@ function LevelBar({ label, counts }: { label: string; counts: { filled: number; 
 }
 
 export function PerspectiveDashboard({ coverage, project }: Props) {
-  // Use project name in the dashboard title
   const projectName = project?.name || 'Safety Project';
   const covColor = coverage.coverage_pct >= 80 ? '#10b981' : coverage.coverage_pct >= 50 ? '#f59e0b' : '#ef4444';
-  const appColor = coverage.approval_pct >= 80 ? '#10b981' : coverage.approval_pct >= 50 ? '#f59e0b' : '#ef4444';
+
+  // Compute approval percentage from items_by_type
+  const totalItems = coverage.total_items || 0;
+  const totalApproved = Object.values(coverage.items_by_type || {}).reduce((sum, c) => sum + (c.approved || 0), 0);
+  const approvalPct = totalItems > 0 ? (totalApproved / totalItems) * 100 : 0;
+  const appColor = approvalPct >= 80 ? '#10b981' : approvalPct >= 50 ? '#f59e0b' : '#ef4444';
+
+  // Compute ASIL distribution from hazardous_event items
+  const asilDist: Record<string, number> = { QM: 0, A: 0, B: 0, C: 0, D: 0, undetermined: 0 };
+  for (const item of project.items) {
+    if (item.item_type === 'hazardous_event') {
+      const asil = item.attributes?.asil_level;
+      if (asil && asilDist[asil] !== undefined) {
+        asilDist[asil]++;
+      } else {
+        asilDist.undetermined++;
+      }
+    }
+  }
 
   return (
     <div className="asil-dashboard">
@@ -61,30 +87,34 @@ export function PerspectiveDashboard({ coverage, project }: Props) {
       {/* Score Rings */}
       <div className="asil-dash-rings">
         <ScoreRing value={coverage.coverage_pct} label="Coverage" color={covColor} />
-        <ScoreRing value={coverage.approval_pct} label="Approved" color={appColor} />
+        <ScoreRing value={approvalPct} label="Approved" color={appColor} />
       </div>
 
       {/* Stats */}
       <div className="asil-dash-stats">
         <div className="asil-dash-stat">
-          <span className="asil-dash-stat-val">{coverage.total_chains}</span>
-          <span className="asil-dash-stat-label">Chains</span>
+          <span className="asil-dash-stat-val">{coverage.total_items}</span>
+          <span className="asil-dash-stat-label">Items</span>
         </div>
         <div className="asil-dash-stat">
-          <span className="asil-dash-stat-val">{coverage.complete_chains}</span>
-          <span className="asil-dash-stat-label">Complete</span>
+          <span className="asil-dash-stat-val">{coverage.total_links}</span>
+          <span className="asil-dash-stat-label">Links</span>
         </div>
         <div className="asil-dash-stat">
-          <span className="asil-dash-stat-val asil-dash-stat-gap">{coverage.total_gaps}</span>
+          <span className="asil-dash-stat-val">{coverage.fully_traced_chains}</span>
+          <span className="asil-dash-stat-label">Traced</span>
+        </div>
+        <div className="asil-dash-stat">
+          <span className="asil-dash-stat-val asil-dash-stat-gap">{coverage.gaps?.length || 0}</span>
           <span className="asil-dash-stat-label">Gaps</span>
         </div>
       </div>
 
       {/* Level Breakdown */}
       <div className="asil-dash-section">
-        <h4>Approval Status by Level</h4>
-        {Object.entries(coverage.level_counts).map(([level, counts]) => (
-          <LevelBar key={level} label={level.replace('_', ' ')} counts={counts} />
+        <h4>Approval Status by Type</h4>
+        {Object.entries(coverage.items_by_type || {}).map(([type, counts]) => (
+          <LevelBar key={type} label={TYPE_LABELS[type] || type} counts={counts} />
         ))}
       </div>
 
@@ -92,7 +122,7 @@ export function PerspectiveDashboard({ coverage, project }: Props) {
       <div className="asil-dash-section">
         <h4>ASIL Distribution</h4>
         <div className="asil-dash-dist">
-          {Object.entries(coverage.asil_distribution).map(([level, count]) => (
+          {Object.entries(asilDist).map(([level, count]) => (
             count > 0 && (
               <div key={level} className="asil-dash-dist-item">
                 <span

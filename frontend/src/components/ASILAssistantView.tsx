@@ -1,32 +1,42 @@
 import { useState, useRef, useEffect } from 'react';
 import { api } from '../services/api';
 import type {
-  SafetyProject, SafetyChain, ChainLevel, Perspective,
-  CoverageMetrics,
+  SafetyProject, SafetyItem, Perspective,
+  CoverageMetrics, ItemType,
 } from '../types/safety';
-import { ChainCard } from './ChainCard';
+import { TraceTreeView } from './TraceTreeView';
+import { TraceMatrixView } from './TraceMatrixView';
 import { GapFiller } from './GapFiller';
 import { ASILWizard } from './ASILWizard';
 import { PerspectiveDashboard } from './PerspectiveDashboard';
 
 const PERSPECTIVES: { key: Perspective; label: string; icon: string; hint: string }[] = [
-  { key: 'safety_engineer', label: 'Safety Engineer', icon: '\u{1F6E1}', hint: 'Top-down view sorted by ASIL severity. Focus on hazard analysis and safety goals.' },
-  { key: 'test_engineer', label: 'Test Engineer', icon: '\u{1F9EA}', hint: 'Bottom-up view highlighting missing test cases and unverified FSRs.' },
-  { key: 'req_engineer', label: 'Requirements', icon: '\u{1F4CB}', hint: 'FSR-focused view sorted by requirement status: gaps first, then drafts, then approved.' },
-  { key: 'manager', label: 'Manager', icon: '\u{1F4CA}', hint: 'Overview sorted by completeness. Chains with the most gaps appear first.' },
+  { key: 'safety_engineer', label: 'Safety Engineer', icon: '\u{1F6E1}', hint: 'Top-down view from hazards. Focus on ASIL severity and safety goals.' },
+  { key: 'test_engineer', label: 'Test Engineer', icon: '\u{1F9EA}', hint: 'Bottom-up view from verification items. Focus on test coverage.' },
+  { key: 'req_engineer', label: 'Requirements', icon: '\u{1F4CB}', hint: 'Requirements-focused view. FSRs and TSRs sorted by status.' },
+  { key: 'manager', label: 'Manager', icon: '\u{1F4CA}', hint: 'Overview sorted by completeness. Items with gaps appear first.' },
 ];
+
+const TYPE_LABELS: Record<ItemType, string> = {
+  hazard: 'Hazards',
+  hazardous_event: 'Events',
+  safety_goal: 'Goals',
+  fsr: 'FSRs',
+  tsr: 'TSRs',
+  verification: 'Verification',
+};
 
 export function ASILAssistantView() {
   const [project, setProject] = useState<SafetyProject | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [file, setFile] = useState<File | null>(null);
-  const [perspective, setPerspective] = useState<Perspective>('safety_engineer');
-  const [selectedChain, setSelectedChain] = useState<string | null>(null);
-  const [selectedLevel, setSelectedLevel] = useState<ChainLevel | null>(null);
+  const [viewMode, setViewMode] = useState<'tree' | 'matrix'>('tree');
+  const [selectedItemId, setSelectedItemId] = useState<string | null>(null);
+  const [showASILWizard, setShowASILWizard] = useState(false);
   const [coverage, setCoverage] = useState<CoverageMetrics | null>(null);
+  const [perspective, setPerspective] = useState<Perspective>('safety_engineer');
   const [showDashboard, setShowDashboard] = useState(false);
-  const [perspectiveChains, setPerspectiveChains] = useState<SafetyChain[] | null>(null);
   // Save/Load
   const [showSave, setShowSave] = useState(false);
   const [saveUser, setSaveUser] = useState('');
@@ -37,23 +47,16 @@ export function ASILAssistantView() {
   // Load coverage when project changes
   useEffect(() => {
     if (project) {
-      api.getSafetyCoverage().then(setCoverage).catch(() => {});
+      api.getCoverage().then(setCoverage).catch(() => {});
     }
   }, [project]);
-
-  // Load perspective chains
-  useEffect(() => {
-    if (project) {
-      api.getPerspective(perspective).then(setPerspectiveChains).catch(() => {});
-    }
-  }, [project, perspective]);
 
   const handleImport = async () => {
     if (!file) return;
     setLoading(true);
     setError(null);
     try {
-      const result = await api.importSafetyChain(file);
+      const result = await api.importSafetyProject(file);
       setProject(result);
     } catch (e: any) {
       setError(e?.response?.data?.detail || e.message || 'Import failed');
@@ -64,22 +67,14 @@ export function ASILAssistantView() {
 
   const refreshProject = async () => {
     try {
-      const result = await api.getProject(project?.project_id);
-      setProject(result);
-      // Also refresh perspective chains and coverage
-      api.getPerspective(perspective).then(setPerspectiveChains).catch(() => {});
-      api.getSafetyCoverage().then(setCoverage).catch(() => {});
+      if (project) {
+        const result = await api.getProject(project.project_id);
+        setProject(result);
+        // Also refresh coverage
+        api.getCoverage().then(setCoverage).catch(() => {});
+      }
     } catch (e) {
       // ignore
-    }
-  };
-
-  const handleAddChain = async () => {
-    try {
-      await api.addChain();
-      await refreshProject();
-    } catch (e: any) {
-      setError(e?.response?.data?.detail || 'Failed to add chain');
     }
   };
 
@@ -90,7 +85,7 @@ export function ASILAssistantView() {
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `${project?.name || 'safety_chain'}_export.reqif`;
+      a.download = `${project?.name || 'safety_graph'}_export.reqif`;
       a.click();
       URL.revokeObjectURL(url);
     } catch (e: any) {
@@ -124,18 +119,26 @@ export function ASILAssistantView() {
     }
   };
 
-  const handleBlockClick = (chainId: string, level: ChainLevel) => {
-    setSelectedChain(chainId);
-    setSelectedLevel(level);
-    setShowDashboard(false);
+  const handleSelectItem = (itemId: string) => {
+    setSelectedItemId(itemId);
+    setShowASILWizard(false);
+  };
+
+  const handleASILBadgeClick = () => {
+    setShowASILWizard(true);
   };
 
   const handleClosePanel = () => {
-    setSelectedChain(null);
-    setSelectedLevel(null);
+    setSelectedItemId(null);
+    setShowASILWizard(false);
   };
 
-  const chains = perspectiveChains || project?.chains || [];
+  const getSelectedItem = (): SafetyItem | null => {
+    if (!project || !selectedItemId) return null;
+    return project.items.find(item => item.item_id === selectedItemId) || null;
+  };
+
+  const selectedItem = getSelectedItem();
 
   // ── Import Phase ──
   if (!project) {
@@ -144,8 +147,8 @@ export function ASILAssistantView() {
         <h2>ASIL Assistant</h2>
         <p className="asil-upload-desc">
           Import an existing requirements file (SysML v2, ReqIF, CSV, Excel, or Word) to analyze the
-          ISO 26262 safety chain. The tool identifies hazards, safety goals, FSRs, and
-          test cases — then highlights gaps for AI-assisted completion.
+          ISO 26262 safety graph. The tool identifies hazards, safety goals, FSRs, and
+          verification items — then highlights gaps for AI-assisted completion.
         </p>
 
         <div className="asil-upload-box">
@@ -167,20 +170,20 @@ export function ASILAssistantView() {
 
         <div className="asil-features">
           <div className="asil-feature">
-            <strong>Full Safety Chain</strong>
-            <span>Hazard &rarr; Event (ASIL) &rarr; Goal &rarr; FSR &rarr; Test</span>
+            <strong>Graph-Based Traceability</strong>
+            <span>Many-to-many relationships between hazards, events, goals, FSRs, and verification</span>
+          </div>
+          <div className="asil-feature">
+            <strong>Multiple Views</strong>
+            <span>Tree view for hierarchical navigation, matrix view for systematic tracing</span>
           </div>
           <div className="asil-feature">
             <strong>AI Gap-Filling</strong>
-            <span>Click any gap for AI-drafted suggestions</span>
+            <span>Click any item to get AI-drafted suggestions</span>
           </div>
           <div className="asil-feature">
             <strong>4 Perspectives</strong>
-            <span>Safety, Test, Requirements, Manager views</span>
-          </div>
-          <div className="asil-feature">
-            <strong>ReqIF Export</strong>
-            <span>Download fully traced chain</span>
+            <span>Safety, Test, Requirements, Manager views for different stakeholders</span>
           </div>
         </div>
 
@@ -202,13 +205,13 @@ export function ASILAssistantView() {
     );
   }
 
-  // ── Chain Editor Phase ──
+  // ── Graph Editor Phase ──
   return (
-    <div className={`asil-editor ${selectedChain ? 'panel-open' : ''}`}>
+    <div className={`asil-editor ${selectedItemId ? 'panel-open' : ''}`}>
       {/* Top Bar */}
       <div className="asil-topbar">
         <div className="asil-topbar-left">
-          <button className="btn-secondary asil-back-btn" onClick={() => { setProject(null); setFile(null); setPerspectiveChains(null); }}>
+          <button className="btn-secondary asil-back-btn" onClick={() => { setProject(null); setFile(null); setSelectedItemId(null); }}>
             &larr; New Import
           </button>
           <h3 className="asil-project-name">{project.name}</h3>
@@ -264,57 +267,82 @@ export function ASILAssistantView() {
 
       {error && <div className="asil-error">{error}</div>}
 
-      {/* Dashboard or Chain List */}
+      {/* Main content area */}
       <div className="asil-content">
-        {showDashboard && coverage ? (
-          <PerspectiveDashboard coverage={coverage} project={project} />
-        ) : (
-          <div className="asil-chain-list">
-            <div className="asil-chain-header">
-              <span className="asil-chain-header-label">Hazard</span>
-              <span className="asil-chain-header-arrow">&rarr;</span>
-              <span className="asil-chain-header-label">Haz. Event + ASIL</span>
-              <span className="asil-chain-header-arrow">&rarr;</span>
-              <span className="asil-chain-header-label">Safety Goal</span>
-              <span className="asil-chain-header-arrow">&rarr;</span>
-              <span className="asil-chain-header-label">FSR</span>
-              <span className="asil-chain-header-arrow">&rarr;</span>
-              <span className="asil-chain-header-label">Test Case</span>
-            </div>
-            {chains.map((chain) => (
-              <ChainCard
-                key={chain.chain_id}
-                chain={chain}
-                selectedLevel={selectedChain === chain.chain_id ? selectedLevel : null}
-                onBlockClick={(level) => handleBlockClick(chain.chain_id, level)}
-                perspective={perspective}
-              />
-            ))}
-            <button className="asil-add-chain-btn" onClick={handleAddChain}>
-              + Add Chain
+        {/* View toggle and content */}
+        <div className="asil-main-area">
+          <div className="asil-view-controls">
+            <button
+              className={`asil-view-btn ${viewMode === 'tree' ? 'active' : ''}`}
+              onClick={() => setViewMode('tree')}
+            >
+              Tree View
+            </button>
+            <button
+              className={`asil-view-btn ${viewMode === 'matrix' ? 'active' : ''}`}
+              onClick={() => setViewMode('matrix')}
+            >
+              Matrix View
             </button>
           </div>
-        )}
 
-        {/* GapFiller Side Panel */}
-        {selectedChain && selectedLevel && (
-          selectedLevel === 'asil_determination' ? (
-            <ASILWizard
-              chainId={selectedChain}
-              chain={chains.find(c => c.chain_id === selectedChain) || null}
-              onClose={handleClosePanel}
-              onUpdate={refreshProject}
+          {showDashboard && coverage ? (
+            <PerspectiveDashboard coverage={coverage} project={project} />
+          ) : viewMode === 'tree' ? (
+            <TraceTreeView
+              project={project}
+              selectedItemId={selectedItemId}
+              onSelectItem={handleSelectItem}
             />
           ) : (
-            <GapFiller
-              chainId={selectedChain}
-              level={selectedLevel}
-              chain={chains.find(c => c.chain_id === selectedChain) || null}
-              onClose={handleClosePanel}
-              onUpdate={refreshProject}
+            <TraceMatrixView
+              project={project}
+              onProjectChange={refreshProject}
             />
-          )
+          )}
+        </div>
+
+        {/* Side Panel - Item Editor or ASIL Wizard */}
+        {selectedItem && project && (
+          <div className="asil-side-panel">
+            <div className="asil-panel-header">
+              <h4>{selectedItem.name}</h4>
+              <button className="btn-icon" onClick={handleClosePanel}>×</button>
+            </div>
+
+            {selectedItem.item_type === 'hazardous_event' && showASILWizard ? (
+              <ASILWizard
+                item={selectedItem}
+                project={project}
+                onClose={handleClosePanel}
+                onUpdate={refreshProject}
+              />
+            ) : (
+              <GapFiller
+                item={selectedItem}
+                project={project}
+                onClose={handleClosePanel}
+                onUpdate={refreshProject}
+                onShowASILWizard={selectedItem.item_type === 'hazardous_event' ? handleASILBadgeClick : undefined}
+              />
+            )}
+          </div>
         )}
+      </div>
+
+      {/* Bottom bar - item counts */}
+      <div className="asil-bottom-bar">
+        <div className="asil-item-counts">
+          {Object.entries(TYPE_LABELS).map(([type, label]) => {
+            const count = project.items.filter(item => item.item_type === type as ItemType).length;
+            return (
+              <div key={type} className="asil-count-item">
+                <span className="asil-count-label">{label}</span>
+                <span className="asil-count-value">{count}</span>
+              </div>
+            );
+          })}
+        </div>
       </div>
     </div>
   );

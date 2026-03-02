@@ -1,27 +1,27 @@
 import { useState, useEffect } from 'react';
 import { api } from '../services/api';
-import type { SafetyChain, ASILDefinitions } from '../types/safety';
+import type { SafetyItem, SafetyProject } from '../types/safety';
 
 const ASIL_COLORS: Record<string, string> = {
   QM: '#94a3b8', A: '#3b82f6', B: '#f59e0b', C: '#f97316', D: '#ef4444',
 };
 
 interface ASILWizardProps {
-  chainId: string;
-  chain: SafetyChain | null;
+  item: SafetyItem;
+  project: SafetyProject;
   onClose: () => void;
   onUpdate: () => void;
 }
 
-export function ASILWizard({ chainId, chain, onClose, onUpdate }: ASILWizardProps) {
-  const [defs, setDefs] = useState<ASILDefinitions | null>(null);
-  const [severity, setSeverity] = useState(chain?.asil_determination?.severity || '');
-  const [sevRationale, setSevRationale] = useState(chain?.asil_determination?.severity_rationale || '');
-  const [exposure, setExposure] = useState(chain?.asil_determination?.exposure || '');
-  const [expRationale, setExpRationale] = useState(chain?.asil_determination?.exposure_rationale || '');
-  const [controllability, setControllability] = useState(chain?.asil_determination?.controllability || '');
-  const [ctrlRationale, setCtrlRationale] = useState(chain?.asil_determination?.controllability_rationale || '');
-  const [computedASIL, setComputedASIL] = useState(chain?.asil_determination?.asil_level || '');
+export function ASILWizard({ item, project, onClose, onUpdate }: ASILWizardProps) {
+  const [defs, setDefs] = useState<any>(null);
+  const [severity, setSeverity] = useState(item.attributes?.severity || '');
+  const [sevRationale, setSevRationale] = useState((item.attributes as any)?.severity_rationale || '');
+  const [exposure, setExposure] = useState(item.attributes?.exposure || '');
+  const [expRationale, setExpRationale] = useState((item.attributes as any)?.exposure_rationale || '');
+  const [controllability, setControllability] = useState(item.attributes?.controllability || '');
+  const [ctrlRationale, setCtrlRationale] = useState((item.attributes as any)?.controllability_rationale || '');
+  const [computedASIL, setComputedASIL] = useState(item.attributes?.asil_level || '');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [step, setStep] = useState(0); // 0=severity, 1=exposure, 2=controllability, 3=result
@@ -30,12 +30,18 @@ export function ASILWizard({ chainId, chain, onClose, onUpdate }: ASILWizardProp
     api.getASILDefinitions().then(setDefs).catch(() => {});
   }, []);
 
+  // Find parent hazard for context
+  const parentHazard = project.items.find(i =>
+    i.item_type === 'hazard' &&
+    project.links.some(l => l.source_id === i.item_id && l.target_id === item.item_id)
+  );
+
   const handleCompute = async () => {
     if (!severity || !exposure || !controllability) return;
     setLoading(true);
     try {
-      const result = await api.determineASIL(chainId, severity, exposure, controllability);
-      setComputedASIL(result.asil_level);
+      const result = await api.determineASIL(item.item_id, severity, exposure, controllability);
+      setComputedASIL(result.attributes?.asil_level || (result as any).asil_level || '');
       setStep(3);
       onUpdate();
     } catch (e: any) {
@@ -49,15 +55,24 @@ export function ASILWizard({ chainId, chain, onClose, onUpdate }: ASILWizardProp
     setLoading(true);
     setError('');
     try {
-      const result = await api.determineASIL(chainId); // no ratings → AI suggests
-      if (result.suggestion) {
-        const s = result.suggestion;
-        if (s.severity) { setSeverity(s.severity); setSevRationale(s.severity_rationale || ''); }
-        if (s.exposure) { setExposure(s.exposure); setExpRationale(s.exposure_rationale || ''); }
-        if (s.controllability) { setControllability(s.controllability); setCtrlRationale(s.controllability_rationale || ''); }
+      const result = await api.determineASIL(item.item_id); // no ratings -> AI suggests
+      if ((result as any).suggestion) {
+        const s = (result as any).suggestion;
+        if (s.severity) {
+          setSeverity(s.severity);
+          setSevRationale(s.severity_rationale || '');
+        }
+        if (s.exposure) {
+          setExposure(s.exposure);
+          setExpRationale(s.exposure_rationale || '');
+        }
+        if (s.controllability) {
+          setControllability(s.controllability);
+          setCtrlRationale(s.controllability_rationale || '');
+        }
       }
-      if (result.error) {
-        setError(result.error);
+      if ((result as any).error) {
+        setError((result as any).error);
       }
     } catch (e: any) {
       setError(e?.response?.data?.detail || 'AI suggestion failed');
@@ -68,7 +83,7 @@ export function ASILWizard({ chainId, chain, onClose, onUpdate }: ASILWizardProp
 
   const handleApprove = async () => {
     try {
-      await api.approveASIL(chainId);
+      await api.approveItem(item.item_id);
       onUpdate();
       onClose();
     } catch (e: any) {
@@ -85,8 +100,8 @@ export function ASILWizard({ chainId, chain, onClose, onUpdate }: ASILWizardProp
       <div className="gap-filler-header">
         <div>
           <h3>ASIL Determination</h3>
-          {chain?.hazard?.name && (
-            <span className="asil-wizard-hazard">for: {chain.hazard.name}</span>
+          {parentHazard && (
+            <span className="asil-wizard-hazard">for: {parentHazard.name}</span>
           )}
         </div>
         <button className="gap-filler-close" onClick={onClose}>&times;</button>

@@ -1,0 +1,148 @@
+.trace-tree-view {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: var(--surface-1);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+}
+
+.trace-tree-header {
+  padding: 16px;
+  background: var(--surface-2);
+  border-bottom: 1px solid var(--line);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.trace-tree-header h3 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text-1);
+}
+
+.trace-tree-count {
+  margin: 0;
+  font-size: 13px;
+  color: var(--text-3);
+}
+
+.trace-tree-content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 12px;
+}
+
+.trace-tree-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  color: var(--text-3);
+  font-size: 14px;
+}
+
+.trace-tree-node {
+  margin-bottom: 4px;
+}
+
+.trace-tree-node-content {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 4px;
+  transition: background-color 0.15s;
+}
+
+.trace-tree-node-content.selected {
+  background-color: rgba(59, 130, 246, 0.15);
+  border-left: 3px solid var(--st-approved);
+}
+
+.trace-tree-expand-btn {
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: none;
+  background: none;
+  cursor: pointer;
+  font-size: 12px;
+  color: var(--text-3);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform 0.15s, color 0.15s;
+}
+
+.trace-tree-expand-btn.expanded {
+  transform: rotate(90deg);
+}
+
+.trace-tree-expand-btn:hover {
+  color: var(--text-1);
+}
+
+.trace-tree-expand-placeholder {
+  width: 20px;
+  height: 20px;
+}
+
+.trace-tree-item-btn {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0;
+  border: none;
+  background: none;
+  cursor: pointer;
+  font-size: 14px;
+  color: var(--text-2);
+  text-align: left;
+  transition: color 0.15s;
+}
+
+.trace-tree-item-btn:hover {
+  color: var(--text-1);
+}
+
+.trace-tree-status-badge {
+  flex-shrink: 0;
+}
+
+.trace-tree-item-name {
+  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.trace-tree-asil-badge {
+  flex-shrink: 0;
+  display: inline-block;
+  padding: 2px 8px;
+  background: var(--st-draft-bg);
+  color: var(--st-draft);
+  border-radius: 3px;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.trace-tree-item-type {
+  flex-shrink: 0;
+  display: inline-block;
+  padding: 2px 8px;
+  background: var(--surface-2);
+  color: var(--text-3);
+  border-radius: 3px;
+  font-size: 11px;
+}
+
+.trace-tree-children {
+  border-left: 2px solid var(--line);
+  margin-left: 10px;
+  padding-left: 0;
+}

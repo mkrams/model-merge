@@ -1,17 +1,18 @@
 import { useState } from 'react';
 import { api } from '../services/api';
-import type { SafetyChain, ChainLevel, DraftResponse } from '../types/safety';
+import type { SafetyItem, SafetyProject, ItemType, DraftResponse } from '../types/safety';
 
-const LEVEL_LABELS: Record<string, string> = {
+const TYPE_LABELS: Record<string, string> = {
   hazard: 'Hazard',
   hazardous_event: 'Hazardous Event',
   safety_goal: 'Safety Goal',
   fsr: 'Functional Safety Requirement',
-  test_case: 'Test Case',
+  tsr: 'Technical Safety Requirement',
+  verification: 'Verification Item',
 };
 
-// Fields per level
-const LEVEL_FIELDS: Record<string, { key: string; label: string; type: 'input' | 'textarea' }[]> = {
+// Fields per item type
+const FIELDS_BY_TYPE: Record<ItemType, { key: string; label: string; type: 'input' | 'textarea'; attrKey?: string }[]> = {
   hazard: [
     { key: 'name', label: 'Name', type: 'input' },
     { key: 'description', label: 'Description', type: 'textarea' },
@@ -19,55 +20,58 @@ const LEVEL_FIELDS: Record<string, { key: string; label: string; type: 'input' |
   hazardous_event: [
     { key: 'name', label: 'Name', type: 'input' },
     { key: 'description', label: 'Description', type: 'textarea' },
-    { key: 'operating_situation', label: 'Operating Situation', type: 'textarea' },
+    { key: 'operating_situation', label: 'Operating Situation', type: 'textarea', attrKey: 'operating_situation' },
   ],
   safety_goal: [
     { key: 'name', label: 'Name', type: 'input' },
     { key: 'description', label: 'Description (shall statement)', type: 'textarea' },
-    { key: 'safe_state', label: 'Safe State', type: 'textarea' },
+    { key: 'safe_state', label: 'Safe State', type: 'textarea', attrKey: 'safe_state' },
   ],
   fsr: [
     { key: 'name', label: 'Name', type: 'input' },
     { key: 'description', label: 'Description (shall statement)', type: 'textarea' },
-    { key: 'testable_criterion', label: 'Testable Criterion', type: 'textarea' },
+    { key: 'testable_criterion', label: 'Testable Criterion', type: 'textarea', attrKey: 'testable_criterion' },
   ],
-  test_case: [
+  tsr: [
+    { key: 'name', label: 'Name', type: 'input' },
+    { key: 'description', label: 'Description (shall statement)', type: 'textarea' },
+    { key: 'testable_criterion', label: 'Testable Criterion', type: 'textarea', attrKey: 'testable_criterion' },
+    { key: 'allocated_to', label: 'Allocated To (component)', type: 'input', attrKey: 'allocated_to' },
+  ],
+  verification: [
     { key: 'name', label: 'Name', type: 'input' },
     { key: 'description', label: 'Objective', type: 'textarea' },
-    { key: 'steps', label: 'Test Steps', type: 'textarea' },
-    { key: 'expected_result', label: 'Expected Result', type: 'textarea' },
-    { key: 'pass_criteria', label: 'Pass Criteria', type: 'textarea' },
+    { key: 'method', label: 'Method', type: 'input', attrKey: 'method' },
+    { key: 'steps', label: 'Steps', type: 'textarea', attrKey: 'steps' },
+    { key: 'expected_result', label: 'Expected Result', type: 'textarea', attrKey: 'expected_result' },
+    { key: 'pass_criteria', label: 'Pass Criteria', type: 'textarea', attrKey: 'pass_criteria' },
   ],
 };
 
-function getItem(chain: SafetyChain, level: ChainLevel): any {
-  switch (level) {
-    case 'hazard': return chain.hazard;
-    case 'hazardous_event': return chain.hazardous_event;
-    case 'safety_goal': return chain.safety_goal;
-    case 'fsr': return chain.fsr;
-    case 'test_case': return chain.test_case;
-    default: return null;
-  }
-}
-
 interface GapFillerProps {
-  chainId: string;
-  level: ChainLevel;
-  chain: SafetyChain | null;
+  item: SafetyItem;
+  project: SafetyProject;
   onClose: () => void;
   onUpdate: () => void;
+  onShowASILWizard?: () => void;
 }
 
-export function GapFiller({ chainId, level, chain, onClose, onUpdate }: GapFillerProps) {
-  const item = chain ? getItem(chain, level) : null;
-  const fields = LEVEL_FIELDS[level] || LEVEL_FIELDS.hazard;
+export function GapFiller({ item, project, onClose, onUpdate, onShowASILWizard }: GapFillerProps) {
+  const fields = FIELDS_BY_TYPE[item.item_type] || FIELDS_BY_TYPE.hazard;
 
-  // Initialize field values from existing item
+  // Initialize field values from item (top-level props and attributes)
   const initFieldValues = (): Record<string, string> => {
     const vals: Record<string, string> = {};
     for (const f of fields) {
-      vals[f.key] = item?.[f.key] || '';
+      if (f.key === 'name') {
+        vals[f.key] = item.name || '';
+      } else if (f.key === 'description') {
+        vals[f.key] = item.description || '';
+      } else if (f.attrKey) {
+        vals[f.key] = item.attributes?.[f.attrKey] || '';
+      } else {
+        vals[f.key] = '';
+      }
     }
     return vals;
   };
@@ -77,7 +81,12 @@ export function GapFiller({ chainId, level, chain, onClose, onUpdate }: GapFille
   const [aiOverwrite, setAiOverwrite] = useState<Record<string, boolean>>(() => {
     const ow: Record<string, boolean> = {};
     for (const f of fields) {
-      ow[f.key] = !(item?.[f.key]); // toggle ON for empty fields, OFF for filled
+      let fieldValue = '';
+      if (f.key === 'name') fieldValue = item.name || '';
+      else if (f.key === 'description') fieldValue = item.description || '';
+      else if (f.attrKey) fieldValue = item.attributes?.[f.attrKey] || '';
+
+      ow[f.key] = !fieldValue; // toggle ON for empty fields, OFF for filled
     }
     return ow;
   });
@@ -130,7 +139,7 @@ export function GapFiller({ chainId, level, chain, onClose, onUpdate }: GapFille
     setLoading(true);
     setError('');
     try {
-      const result = await api.draftItem(chainId, level);
+      const result = await api.draftItem(item.item_id);
       applyAiResult(result);
     } catch (e: any) {
       setError(e?.response?.data?.detail || 'AI generation failed');
@@ -145,7 +154,7 @@ export function GapFiller({ chainId, level, chain, onClose, onUpdate }: GapFille
     setError('');
     setChatMessages(prev => [...prev, { role: 'user', text: feedback }]);
     try {
-      const result = await api.reviseItem(chainId, level, feedback);
+      const result = await api.reviseItem(item.item_id, feedback);
       applyAiResult(result);
       setFeedback('');
     } catch (e: any) {
@@ -159,13 +168,7 @@ export function GapFiller({ chainId, level, chain, onClose, onUpdate }: GapFille
     setLoading(true);
     setError('');
     try {
-      const extra: Record<string, string> = {};
-      for (const f of fields) {
-        if (f.key !== 'name' && f.key !== 'description') {
-          extra[f.key] = fieldValues[f.key] || '';
-        }
-      }
-      await api.approveItem(chainId, level, fieldValues.name || '', fieldValues.description || '', extra);
+      await api.approveItem(item.item_id);
       onUpdate();
       onClose();
     } catch (e: any) {
@@ -178,15 +181,19 @@ export function GapFiller({ chainId, level, chain, onClose, onUpdate }: GapFille
   const handleSaveEdit = async () => {
     setLoading(true);
     try {
-      const saveFields: Record<string, string> = {};
+      const updateData: Record<string, string> = {
+        name: fieldValues.name || '',
+        description: fieldValues.description || '',
+      };
+
+      // Add attribute fields
       for (const f of fields) {
-        if (f.key === 'description') {
-          saveFields.description = fieldValues.description || '';
-        } else {
-          saveFields[f.key] = fieldValues[f.key] || '';
+        if (f.attrKey) {
+          updateData[f.attrKey] = fieldValues[f.key] || '';
         }
       }
-      await api.editItem(chainId, level, saveFields);
+
+      await api.updateItem(item.item_id, updateData);
       onUpdate();
     } catch (e: any) {
       setError(e?.response?.data?.detail || 'Save failed');
@@ -197,32 +204,58 @@ export function GapFiller({ chainId, level, chain, onClose, onUpdate }: GapFille
 
   const handleRevert = async (idx: number) => {
     try {
-      await api.revertItem(chainId, level, idx);
+      await api.revertItem(item.item_id, idx);
       onUpdate();
     } catch (e: any) {
       setError(e?.response?.data?.detail || 'Revert failed');
     }
   };
 
-  const versions = item?.versions || [];
+  const versions = item.versions || [];
 
-  // Context bar
+  // Find parent and child items from the graph
+  const parents = project.items.filter(i =>
+    project.links.some(l => l.source_id === i.item_id && l.target_id === item.item_id)
+  );
+  const children = project.items.filter(i =>
+    project.links.some(l => l.source_id === item.item_id && l.target_id === i.item_id)
+  );
+
+  // Build context items
   const contextItems: { label: string; value: string; status: string }[] = [];
-  if (chain) {
-    if (chain.hazard && chain.hazard.status !== 'gap') contextItems.push({ label: 'Hazard', value: chain.hazard.name, status: chain.hazard.status });
-    if (chain.asil_determination?.asil_level) contextItems.push({ label: 'ASIL', value: chain.asil_determination.asil_level, status: chain.asil_determination.approved ? 'approved' : 'draft' });
-    if (chain.safety_goal && chain.safety_goal.status !== 'gap') contextItems.push({ label: 'Safety Goal', value: chain.safety_goal.name, status: chain.safety_goal.status });
-    if (chain.fsr && chain.fsr.status !== 'gap') contextItems.push({ label: 'FSR', value: chain.fsr.name, status: chain.fsr.status });
-    if (chain.test_case && chain.test_case.status !== 'gap') contextItems.push({ label: 'Test', value: chain.test_case.name, status: chain.test_case.status });
+
+  // Add ASIL badge for hazardous_event items
+  if (item.item_type === 'hazardous_event' && item.attributes?.asil_level) {
+    contextItems.push({
+      label: 'ASIL',
+      value: item.attributes.asil_level,
+      status: item.status,
+    });
+  }
+
+  // Add parents and children
+  for (const p of parents) {
+    contextItems.push({
+      label: TYPE_LABELS[p.item_type],
+      value: p.name,
+      status: p.status,
+    });
+  }
+  for (const c of children) {
+    contextItems.push({
+      label: TYPE_LABELS[c.item_type],
+      value: c.name,
+      status: c.status,
+    });
   }
 
   return (
     <div className="gap-filler-panel">
       <div className="gap-filler-header">
         <div>
-          <h3>{LEVEL_LABELS[level] || level}</h3>
-          <span className={`gap-filler-status status-${item?.status || 'gap'}`}>
-            {item?.status || 'gap'}
+          <h3>{TYPE_LABELS[item.item_type] || item.item_type}</h3>
+          <span className={`gap-filler-status status-${item.status}`}>
+            {item.status}
           </span>
         </div>
         <button className="gap-filler-close" onClick={onClose}>&times;</button>
@@ -231,9 +264,14 @@ export function GapFiller({ chainId, level, chain, onClose, onUpdate }: GapFille
       {/* Context */}
       {contextItems.length > 0 && (
         <div className="gap-filler-context">
-          <span className="gap-filler-context-label">Chain context:</span>
+          <span className="gap-filler-context-label">Context:</span>
           {contextItems.map((ci, i) => (
-            <span key={i} className={`gap-filler-context-item status-${ci.status}`}>
+            <span
+              key={i}
+              className={`gap-filler-context-item status-${ci.status}`}
+              onClick={ci.label === 'ASIL' && onShowASILWizard ? onShowASILWizard : undefined}
+              style={ci.label === 'ASIL' ? { cursor: 'pointer' } : {}}
+            >
               {ci.label}: {ci.value}
             </span>
           ))}
@@ -338,7 +376,7 @@ export function GapFiller({ chainId, level, chain, onClose, onUpdate }: GapFille
       {showVersions && versions.length > 0 && (
         <div className="gap-filler-versions">
           <h4>Version History</h4>
-          {versions.map((v: { version: number; text: string; author: string; timestamp: string }, i: number) => (
+          {versions.map((v, i) => (
             <div key={i} className="gap-filler-version">
               <div className="gap-filler-version-header">
                 <span>v{v.version} — {v.author}</span>

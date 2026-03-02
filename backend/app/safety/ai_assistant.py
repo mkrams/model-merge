@@ -1,8 +1,6 @@
 """AI-powered safety engineering assistant using Anthropic Claude API.
 
-Drafts hazards, safety goals, FSRs, test cases. Helps with ASIL determination.
-Supports iterative revision with conversation history.
-Uses same httpx → Anthropic pattern as validation/compiler.py.
+Works with graph-based model: drafts items with parent/child context.
 """
 from __future__ import annotations
 import os
@@ -20,7 +18,7 @@ async def _call_claude(system_prompt: str, messages: list[dict], max_tokens: int
     """Call Anthropic API and return text response."""
     api_key = ANTHROPIC_API_KEY or os.environ.get("ANTHROPIC_API_KEY", "")
     if not api_key:
-        logger.warning("No ANTHROPIC_API_KEY set — returning placeholder")
+        logger.warning("No ANTHROPIC_API_KEY set")
         return "[AI unavailable — set ANTHROPIC_API_KEY to enable AI drafting]"
 
     try:
@@ -42,7 +40,6 @@ async def _call_claude(system_prompt: str, messages: list[dict], max_tokens: int
             )
         response.raise_for_status()
         data = response.json()
-        # Extract text from response
         for block in data.get("content", []):
             if block.get("type") == "text":
                 return block["text"]
@@ -71,10 +68,8 @@ Respond in JSON format when asked for structured output."""
 def _extract_json(text: str) -> dict | None:
     """Try to extract JSON from response, handling markdown fences."""
     cleaned = text.strip()
-    # Strip markdown code fences
     if cleaned.startswith("```"):
         lines = cleaned.split("\n")
-        # Remove first line (```json or ```) and last line (```)
         start = 1
         end = len(lines) - 1 if lines[-1].strip() == "```" else len(lines)
         cleaned = "\n".join(lines[start:end]).strip()
@@ -87,38 +82,42 @@ def _extract_json(text: str) -> dict | None:
 # ── Drafting Functions ───────────────────────────────────────────
 
 async def draft_item(
-    level: str,
-    chain_context: dict,
+    item_type: str,
+    context: dict | None = None,
     conversation_history: list[dict] | None = None,
     user_feedback: str = "",
 ) -> dict:
-    """Draft a safety chain item based on context.
+    """Draft a safety item based on context.
 
     Args:
-        level: 'hazard', 'hazardous_event', 'safety_goal', 'fsr', 'test_case'
-        chain_context: Dict with info about the chain (what's filled upstream/downstream)
-        conversation_history: Previous messages in this draft session
-        user_feedback: Optional user instruction for revision
+        item_type: 'hazard', 'hazardous_event', 'safety_goal', 'fsr', 'tsr', 'verification'
+        context: Dict with parents, children, and other graph context
+        conversation_history: Previous messages
+        user_feedback: Optional user instruction
 
     Returns:
-        dict with 'text', 'name', 'rationale'
+        dict with 'text', 'name', and type-specific fields
     """
+    if context is None:
+        context = {}
+
     prompts = {
-        "hazard": _build_hazard_prompt(chain_context),
-        "hazardous_event": _build_he_prompt(chain_context),
-        "safety_goal": _build_sg_prompt(chain_context),
-        "fsr": _build_fsr_prompt(chain_context),
-        "test_case": _build_tc_prompt(chain_context),
+        "hazard": _build_hazard_prompt(context),
+        "hazardous_event": _build_he_prompt(context),
+        "safety_goal": _build_sg_prompt(context),
+        "fsr": _build_fsr_prompt(context),
+        "tsr": _build_tsr_prompt(context),
+        "verification": _build_verification_prompt(context),
     }
 
-    prompt_text = prompts.get(level, f"Draft a {level} based on the given context.")
+    prompt_text = prompts.get(item_type, f"Draft a {item_type}.")
 
     messages = list(conversation_history or [])
 
     if user_feedback:
         messages.append({
             "role": "user",
-            "content": f"Please revise the previous draft based on this feedback: {user_feedback}\n\nContext:\n{prompt_text}",
+            "content": f"Please revise based on: {user_feedback}\n\nContext:\n{prompt_text}",
         })
     else:
         messages.append({
@@ -127,8 +126,8 @@ async def draft_item(
         })
 
     response_text = await _call_claude(SAFETY_SYSTEM, messages)
-
     result = _extract_json(response_text)
+
     if result:
         return {
             "text": result.get("description", result.get("text", response_text)),
@@ -140,8 +139,9 @@ async def draft_item(
             "safe_state": result.get("safe_state", ""),
             "testable_criterion": result.get("testable_criterion", ""),
             "operating_situation": result.get("operating_situation", ""),
+            "allocated_to": result.get("allocated_to", ""),
         }
-    # Plain text response
+
     return {
         "text": response_text,
         "name": "",
@@ -150,42 +150,48 @@ async def draft_item(
 
 
 async def revise_draft(
+    item_type: str,
     current_text: str,
     user_instruction: str,
-    level: str,
-    chain_context: dict,
+    context: dict | None = None,
     conversation_history: list[dict] | None = None,
 ) -> dict:
     """Revise a draft based on user feedback."""
+    if context is None:
+        context = {}
+
     messages = list(conversation_history or [])
 
-    # Build level-specific field list
-    fields = '"name": "short name", "description": "revised full text", "rationale": "why this revision"'
-    if level == "test_case":
-        fields += ', "steps": "1. step\\n2. step", "expected_result": "expected outcome", "pass_criteria": "measurable pass/fail criteria"'
-    elif level == "safety_goal":
-        fields += ', "safe_state": "the defined safe state"'
-    elif level == "fsr":
-        fields += ', "testable_criterion": "how to verify this requirement"'
-    elif level == "hazardous_event":
-        fields += ', "operating_situation": "the driving/operational situation"'
+    # Build field list based on type
+    fields = '"name": "short name", "description": "revised full text", "rationale": "why"'
+    if item_type == "verification":
+        fields += ', "method": "test|analysis|review", "steps": "...", "expected_result": "...", "pass_criteria": "..."'
+    elif item_type == "safety_goal":
+        fields += ', "safe_state": "the safe state"'
+    elif item_type == "fsr":
+        fields += ', "testable_criterion": "how to verify"'
+    elif item_type == "tsr":
+        fields += ', "allocated_to": "component", "testable_criterion": "how to verify"'
+    elif item_type == "hazardous_event":
+        fields += ', "operating_situation": "driving scenario"'
 
     messages.append({
         "role": "user",
-        "content": f"""Current draft for {level}:
+        "content": f"""Current draft for {item_type}:
 \"{current_text}\"
 
 User feedback: {user_instruction}
 
-Context about the safety chain:
-{_format_context(chain_context)}
+Context:
+{_format_context(context)}
 
-Please provide a revised version. Respond with JSON:
+Please provide revised version. Respond with JSON:
 {{{fields}}}""",
     })
 
     response_text = await _call_claude(SAFETY_SYSTEM, messages)
     result = _extract_json(response_text)
+
     if result:
         return {
             "text": result.get("description", result.get("text", response_text)),
@@ -197,26 +203,28 @@ Please provide a revised version. Respond with JSON:
             "safe_state": result.get("safe_state", ""),
             "testable_criterion": result.get("testable_criterion", ""),
             "operating_situation": result.get("operating_situation", ""),
+            "allocated_to": result.get("allocated_to", ""),
         }
+
     return {"text": response_text, "name": "", "rationale": ""}
 
 
 async def suggest_asil_ratings(hazard_description: str) -> dict:
-    """AI suggests S/E/C ratings with rationale for a hazard."""
+    """AI suggests S/E/C ratings with rationale."""
     messages = [{
         "role": "user",
-        "content": f"""Analyze this hazard and suggest ISO 26262 Severity, Exposure, and Controllability ratings:
+        "content": f"""Analyze this hazard and suggest ISO 26262 S/E/C ratings:
 
 Hazard: "{hazard_description}"
 
 Respond with JSON:
 {{
     "severity": "S0|S1|S2|S3",
-    "severity_rationale": "explanation for severity rating",
+    "severity_rationale": "explanation",
     "exposure": "E0|E1|E2|E3|E4",
-    "exposure_rationale": "explanation for exposure rating",
+    "exposure_rationale": "explanation",
     "controllability": "C0|C1|C2|C3",
-    "controllability_rationale": "explanation for controllability rating"
+    "controllability_rationale": "explanation"
 }}""",
     }]
 
@@ -234,75 +242,84 @@ Respond with JSON:
 # ── Prompt Builders ──────────────────────────────────────────────
 
 def _format_context(ctx: dict) -> str:
-    """Format chain context into readable text."""
+    """Format context into readable text."""
     lines = []
-    for key, val in ctx.items():
-        if val and val != "gap":
-            lines.append(f"- {key}: {val}")
-    return "\n".join(lines) if lines else "No existing context."
+    if ctx.get("parents"):
+        lines.append("Parents:")
+        for parent in ctx["parents"]:
+            lines.append(f"  - {parent.get('name', parent.get('item_id', 'unknown'))}: {parent.get('description', '')[:100]}")
+    if ctx.get("children"):
+        lines.append("Children:")
+        for child in ctx["children"]:
+            lines.append(f"  - {child.get('name', child.get('item_id', 'unknown'))}: {child.get('description', '')[:100]}")
+    return "\n".join(lines) if lines else "No context."
 
 
 def _build_hazard_prompt(ctx: dict) -> str:
     context = _format_context(ctx)
-    return f"""Draft a hazard description for an ISO 26262 hazard analysis.
+    return f"""Draft a hazard for ISO 26262 hazard analysis.
 
-Existing context in this safety chain:
+Context:
 {context}
 
 Respond with JSON:
-{{"name": "short hazard name (e.g., 'Unintended acceleration')", "description": "2-3 sentence hazard description including the item, malfunctioning behavior, and potential consequence", "rationale": "why this hazard is relevant"}}"""
+{{"name": "short name (e.g., 'Unintended acceleration')", "description": "hazard description (item, malfunction, consequence)", "rationale": "why this hazard is relevant"}}"""
 
 
 def _build_he_prompt(ctx: dict) -> str:
     context = _format_context(ctx)
-    return f"""Draft a hazardous event description for an ISO 26262 hazard analysis.
-A hazardous event combines a hazard with an operational situation.
+    return f"""Draft a hazardous event: hazard + operational situation.
 
-Existing context in this safety chain:
+Context:
 {context}
 
 Respond with JSON:
-{{"name": "short hazardous event name", "description": "The hazardous event description combining the hazard with a specific driving scenario", "operating_situation": "the driving/operational situation", "rationale": "why this combination is realistic"}}"""
+{{"name": "short name", "description": "event description", "operating_situation": "driving scenario", "rationale": "relevance"}}"""
 
 
 def _build_sg_prompt(ctx: dict) -> str:
     context = _format_context(ctx)
-    return f"""Draft a safety goal for an ISO 26262 functional safety concept.
-A safety goal is a top-level safety requirement assigned to a hazard, with an ASIL level.
+    return f"""Draft a safety goal (top-level requirement with ASIL).
 
-Existing context in this safety chain:
+Format: "The system shall [prevent/detect/mitigate] [behavior]..."
+
+Context:
 {context}
 
-Format: "The system shall [prevent/detect/mitigate] [hazardous behavior] to [avoid consequence]."
-
 Respond with JSON:
-{{"name": "short safety goal name (e.g., 'SG-01: Prevent unintended acceleration')", "description": "The safety goal text using shall-statement format", "safe_state": "the defined safe state", "rationale": "how this goal addresses the hazard"}}"""
+{{"name": "short name", "description": "safety goal text (shall-statement)", "safe_state": "safe state definition", "rationale": "how it addresses the hazard"}}"""
 
 
 def _build_fsr_prompt(ctx: dict) -> str:
     context = _format_context(ctx)
-    return f"""Draft a Functional Safety Requirement (FSR) for an ISO 26262 safety concept.
-An FSR is a testable requirement that implements a safety goal.
+    return f"""Draft a Functional Safety Requirement (FSR): testable requirement implementing safety goal.
 
-Existing context in this safety chain:
+Must be measurable, include timing, specify fault detection.
+
+Context:
 {context}
 
-Requirements for a good FSR:
-- Uses "shall" statement format
-- Is measurable and testable
-- Includes timing constraints where relevant
-- Specifies fault detection/reaction behavior
-
 Respond with JSON:
-{{"name": "short FSR name (e.g., 'FSR-01: Torque monitoring')", "description": "The FSR text using shall-statement format", "testable_criterion": "how to verify this requirement", "rationale": "how this FSR implements the safety goal"}}"""
+{{"name": "short name", "description": "FSR text (shall-statement)", "testable_criterion": "how to verify", "rationale": "how it implements the goal"}}"""
 
 
-def _build_tc_prompt(ctx: dict) -> str:
+def _build_tsr_prompt(ctx: dict) -> str:
     context = _format_context(ctx)
-    return f"""Draft a test case to verify a Functional Safety Requirement.
+    return f"""Draft a Technical Safety Requirement (TSR): component-level requirement.
 
-Existing context in this safety chain:
+Context:
 {context}
 
 Respond with JSON:
-{{"name": "short test case name", "description": "test case objective", "steps": "1. [step]\\n2. [step]\\n3. [step]", "expected_result": "what should happen if the FSR is met", "pass_criteria": "measurable criteria for pass/fail"}}"""
+{{"name": "short name", "description": "TSR text", "allocated_to": "component/system", "testable_criterion": "verification method", "rationale": "mapping from FSR"}}"""
+
+
+def _build_verification_prompt(ctx: dict) -> str:
+    context = _format_context(ctx)
+    return f"""Draft a verification method: test, analysis, or review to verify FSR/TSR.
+
+Context:
+{context}
+
+Respond with JSON:
+{{"name": "short name", "description": "verification objective", "method": "test|analysis|review", "steps": "1. step\\n2. step", "expected_result": "expected outcome", "pass_criteria": "measurable pass/fail"}}"""

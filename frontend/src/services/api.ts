@@ -1,8 +1,8 @@
 import axios from 'axios';
 import type { ParsedModel, MergeAnalysis, MergedResult, ValidationResponse } from '../types';
 import type {
-  SafetyProject, SafetyChain, DraftResponse, Gap,
-  CoverageMetrics, ASILDefinitions, Perspective,
+  SafetyProject, SafetyItem, TraceLink, DraftResponse, GapInfo,
+  CoverageMetrics, ItemType, LinkType, Perspective, TraceTree, TraceMatrix,
 } from '../types/safety';
 
 // In production, VITE_API_URL points to the Railway backend.
@@ -89,13 +89,18 @@ export const api = {
     return data;
   },
 
-  // ── ASIL Assistant API ──
+  // ── Safety Traceability Graph API ──
 
-  async importSafetyChain(file: File): Promise<SafetyProject> {
+  async importSafetyProject(file: File): Promise<SafetyProject> {
     const form = new FormData();
     form.append('file', file);
     const { data } = await client.post('/asil/import', form);
     return data;
+  },
+
+  // Backward compatibility alias
+  async importSafetyChain(file: File): Promise<SafetyProject> {
+    return this.importSafetyProject(file);
   },
 
   async getProject(projectId?: string): Promise<SafetyProject> {
@@ -103,73 +108,123 @@ export const api = {
     return data;
   },
 
-  async addChain(): Promise<SafetyChain> {
-    const { data } = await client.post('/asil/chain/add');
+  // Items CRUD
+  async getItem(itemId: string): Promise<SafetyItem> {
+    const { data } = await client.get(`/asil/item/${itemId}`);
     return data;
   },
 
-  async draftItem(chainId: string, level: string, feedback?: string): Promise<DraftResponse> {
-    const { data } = await client.post('/asil/draft', { chain_id: chainId, level, feedback: feedback || '' });
+  async createItem(itemData: {
+    item_type: ItemType;
+    name: string;
+    description: string;
+    attributes?: Record<string, any>;
+  }): Promise<SafetyItem> {
+    const { data } = await client.post('/asil/item', itemData);
     return data;
   },
 
-  async reviseItem(chainId: string, level: string, instruction: string): Promise<DraftResponse> {
-    const { data } = await client.post('/asil/revise', { chain_id: chainId, level, instruction });
+  async updateItem(itemId: string, fields: Record<string, string>): Promise<SafetyItem> {
+    const { data } = await client.put(`/asil/item/${itemId}`, fields);
     return data;
   },
 
-  async approveItem(chainId: string, level: string, name: string, text: string, extra?: Record<string, string>): Promise<{ status: string }> {
-    const { data } = await client.post('/asil/approve', { chain_id: chainId, level, name, text, ...extra });
+  async deleteItem(itemId: string): Promise<{ status: string }> {
+    const { data } = await client.delete(`/asil/item/${itemId}`);
     return data;
   },
 
-  async revertItem(chainId: string, level: string, versionIdx: number): Promise<{ status: string }> {
-    const { data } = await client.post('/asil/revert', { chain_id: chainId, level, version_idx: versionIdx });
+  async approveItem(itemId: string): Promise<SafetyItem> {
+    const { data } = await client.post(`/asil/item/${itemId}/approve`);
     return data;
   },
 
-  async editItem(chainId: string, level: string, fields: Record<string, string>): Promise<{ status: string }> {
-    const { data } = await client.put('/asil/item', { chain_id: chainId, level, ...fields });
+  async revertItem(itemId: string, versionIdx: number): Promise<SafetyItem> {
+    const { data } = await client.post(`/asil/item/${itemId}/revert`, { version_idx: versionIdx });
     return data;
   },
 
-  async getGaps(): Promise<Gap[]> {
-    const { data } = await client.get('/asil/gaps');
-    return data;
-  },
-
-  async getSafetyCoverage(): Promise<CoverageMetrics> {
-    const { data } = await client.get('/asil/coverage');
-    return data;
-  },
-
-  async getPerspective(role: Perspective): Promise<SafetyChain[]> {
-    const { data } = await client.get(`/asil/perspective/${role}`);
-    return data;
-  },
-
-  async determineASIL(chainId: string, severity?: string, exposure?: string, controllability?: string): Promise<any> {
-    const { data } = await client.post('/asil/asil-determine', {
-      chain_id: chainId, severity: severity || '', exposure: exposure || '', controllability: controllability || '',
+  // Links (traceability edges)
+  async createLink(sourceId: string, targetId: string, linkType?: LinkType, rationale?: string): Promise<TraceLink> {
+    const { data } = await client.post('/asil/link', {
+      source_id: sourceId,
+      target_id: targetId,
+      link_type: linkType,
+      rationale: rationale || '',
     });
     return data;
   },
 
-  async approveASIL(chainId: string): Promise<any> {
-    const { data } = await client.post('/asil/asil-determine/approve', { chain_id: chainId });
+  async deleteLink(linkId: string): Promise<{ status: string }> {
+    const { data } = await client.delete(`/asil/link/${linkId}`);
     return data;
   },
 
+  // AI-assisted drafting and revision
+  async draftItem(itemId: string, feedback?: string): Promise<DraftResponse> {
+    const { data } = await client.post(`/asil/draft/${itemId}`, { feedback: feedback || '' });
+    return data;
+  },
+
+  async reviseItem(itemId: string, instruction: string): Promise<DraftResponse> {
+    const { data } = await client.post(`/asil/revise/${itemId}`, { instruction });
+    return data;
+  },
+
+  // ASIL determination
+  async determineASIL(
+    itemId: string,
+    severity?: string,
+    exposure?: string,
+    controllability?: string,
+  ): Promise<SafetyItem> {
+    const { data } = await client.post('/asil/asil-determine', {
+      item_id: itemId,
+      severity: severity || '',
+      exposure: exposure || '',
+      controllability: controllability || '',
+    });
+    return data;
+  },
+
+  async getASILDefinitions(): Promise<any> {
+    const { data } = await client.get('/asil/definitions');
+    return data;
+  },
+
+  // Analysis and visualization
+  async getGaps(): Promise<GapInfo[]> {
+    const { data } = await client.get('/asil/gaps');
+    return data;
+  },
+
+  async getCoverage(): Promise<CoverageMetrics> {
+    const { data } = await client.get('/asil/coverage');
+    return data;
+  },
+
+  async getPerspective(role: Perspective): Promise<SafetyItem[]> {
+    const { data } = await client.get(`/asil/perspective/${role}`);
+    return data;
+  },
+
+  async getTrace(itemId: string): Promise<TraceTree> {
+    const { data } = await client.get(`/asil/trace/${itemId}`);
+    return data;
+  },
+
+  async getMatrix(sourceType: ItemType, targetType: ItemType): Promise<TraceMatrix> {
+    const { data } = await client.get(`/asil/matrix/${sourceType}/${targetType}`);
+    return data;
+  },
+
+  // Export
   async exportReqIF(): Promise<string> {
     const { data } = await client.post('/asil/export/reqif', {}, { responseType: 'text' });
     return data;
   },
 
-  async getASILDefinitions(): Promise<ASILDefinitions> {
-    const { data } = await client.get('/asil/definitions');
-    return data;
-  },
-
+  // Save/Load
   async saveData(username: string, password: string): Promise<{ status: string }> {
     const { data } = await client.post('/asil/save', { username, password });
     return data;
