@@ -61,7 +61,6 @@ interface GapFillerProps {
 
 export function GapFiller({ chainId, level, chain, onClose, onUpdate }: GapFillerProps) {
   const item = chain ? getItem(chain, level) : null;
-  const isGap = !item || item.status === 'gap';
   const fields = LEVEL_FIELDS[level] || LEVEL_FIELDS.hazard;
 
   // Initialize field values from existing item
